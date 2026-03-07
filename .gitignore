@@ -1,0 +1,24 @@
+# OpenClaw/local meta files
+.openclaw/
+memory/
+MEMORY.md
+AGENTS.md
+SOUL.md
+USER.md
+TOOLS.md
+HEARTBEAT.md
+BOOTSTRAP.md
+IDENTITY.md
+
+# Python/cache/log/temp
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+# Local review/test artifacts
+review*.txt
+*.tmp
+*.bak
+run-fullread.nohup.log
