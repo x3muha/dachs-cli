@@ -1338,10 +1338,16 @@ def readall_decoded(port: str, baud: int, blocks: list[int], interval: float, lo
 
 
 def list_keys(mapping_path: Path, limit: int):
-    rows = json.loads(mapping_path.read_text())
-    rows = sorted(rows, key=lambda r: (str(r.get('block')), r.get('key', '')))
+    obj = json.loads(mapping_path.read_text())
+    if isinstance(obj, list):
+        rows = [r for r in obj if isinstance(r, dict)]
+    elif isinstance(obj, dict) and isinstance(obj.get('map'), dict):
+        rows = [dict({'key': k}, **(v if isinstance(v, dict) else {})) for k, v in obj['map'].items()]
+    else:
+        rows = []
+    rows = sorted(rows, key=lambda r: (str(r.get('block', '')), str(r.get('key', ''))))
     for r in rows[:limit]:
-        print(f"{r.get('key')}\tblock={r.get('block')}\tread={r.get('read')}")
+        print(f"{r.get('key', '')}\tblock={r.get('block', '')}\tread={r.get('read', '')}")
     print(f"# total_keys={len(rows)}")
 
 
@@ -1417,7 +1423,7 @@ def main():
     p_rd.add_argument('--key-only', action='store_true', help='Show only [key] (no text label)')
 
     p_keys = sub.add_parser('list-keys', help='List extracted XML keys')
-    p_keys.add_argument('--mapping', default=str(Path(__file__).resolve().parent.parent / 'bhkw-mapping.json'))
+    p_keys.add_argument('--mapping', default=str(Path(__file__).resolve().parent / 'msr2_master_map.json'))
     p_keys.add_argument('--limit', type=int, default=200)
 
     args = ap.parse_args()
