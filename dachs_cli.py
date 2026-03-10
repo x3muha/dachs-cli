@@ -95,8 +95,18 @@ def _parse_all_frames(buf: bytes):
     return out
 
 
-def send_service(ser, service_data: bytes, pn: int, timeout_s: float):
-    tx = mk_send_telegram(service_data, pn)
+def _mk_ack_for_data_frame(frame: bytes, positive: bool = True) -> bytes:
+    if not frame or frame[0] != 0x02 or len(frame) < 5:
+        return b''
+    b0 = frame[3]
+    b1 = frame[4]
+    head = bytes([0x06 if positive else 0x15, b0, b1])
+    c = crc16_msr(head)
+    return head + bytes([(c >> 8) & 0xFF, c & 0xFF])
+
+
+def send_service(ser, service_data: bytes, pn: int, timeout_s: float, src: int = 0x00, dst: int = 0x10):
+    tx = mk_send_telegram(service_data, pn, src=src, dst=dst)
     t0 = time.time()
     ser.write(tx)
     deadline = time.time() + timeout_s
@@ -113,8 +123,14 @@ def send_service(ser, service_data: bytes, pn: int, timeout_s: float):
             if f[0] in (0x06, 0x15) and ((f[1] >> 4) & 0x0F) == pn:
                 ack = f
             if f[0] == 0x02:
-                # some devices emit data with shifted packet numbers; keep latest data frame
                 data = f
+                # Java Msr2Socket sends ACK back for every received data telegram
+                af = _mk_ack_for_data_frame(f, True)
+                if af:
+                    try:
+                        ser.write(af)
+                    except Exception:
+                        pass
         if data:
             break
     return tx, ack, data, (time.time() - t0) * 1000.0

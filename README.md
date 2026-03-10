@@ -143,3 +143,16 @@ Siehe: `BLOCKS.md`
 - `labels_master.properties` – deutsche Labelzuordnung
 - `servicecodes_de.properties` – Servicecode-Texte (bundled, lokal)
 - `meldehist_types_de.properties` – MeldeHIST-Typtexte (bundled, lokal)
+
+
+---
+
+## Script-Dokumentation (pro Datei)
+
+- docs/README_dachs_cli.md
+- docs/README_dachs_cli_writer.md
+- docs/README_dachs_cli_writer_interactive.md
+- docs/README_dachs_cli_writer_tui.md
+- docs/README_build_msr2_map.md
+- docs/README_msr2_module_cpu_test.md
+- docs/README_msr2_write_socket_probe.md
