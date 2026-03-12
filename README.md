@@ -137,7 +137,6 @@ Siehe: `BLOCKS.md`
 ### Wichtige Dateien
 
 - `dachs_cli.py` – Haupt-CLI
-- `build_msr2_map.py` – baut Master-Map aus Source/XML/Properties
 - `msr2_master_map.json` – kombinierte Mapping-Basis
 - `msr2_pack_master.json` – Laufzeit-Pack für Decode/Faktor/Einheiten
 - `labels_master.properties` – deutsche Labelzuordnung
@@ -153,6 +152,5 @@ Siehe: `BLOCKS.md`
 - docs/README_dachs_cli_writer.md
 - docs/README_dachs_cli_writer_interactive.md
 - docs/README_dachs_cli_writer_tui.md
-- docs/README_build_msr2_map.md
 - docs/README_msr2_module_cpu_test.md
 - docs/README_msr2_write_socket_probe.md
