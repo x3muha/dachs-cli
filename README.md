@@ -1,156 +1,132 @@
-# dachs-cli
+# dachs-cli v2
 
-README (Deutsch)
+CLI-/TUI-Toolset für MSR2-Regler (lesen, dekodieren, sichern, schreiben).
+Alle v2-Tools nutzen das versionierte Pack (`msr2_pack_master_version.json`) und `dachs_core.py` als gemeinsame Basis.
 
-## Deutsch
+## Anwendungen (kurz)
 
-CLI-Tool zum Auslesen eines Senertec Dachs (MSR2) über einen optischen Lesekopf (RS232/USB-Serial-Adapter).
+- `dachs_cli_v2.py`  
+  Lesen/Decodieren von Blöcken (`read-block`, `readall`, `readall-decoded`).
 
-Hinweis: Für den Normalbetrieb (`readall-decoded`) reicht `git clone` + Python/pyserial.
-Kein externer Source-Tree nötig.
+- `msr_backup_v2.py`  
+  Vollständiger Backup-Lauf (2 Passes), Auth, Diff zwischen Pass1/Pass2.
 
-### Features (aktueller Stand)
+- `dachs_cli_writer_tui_v2.py`  
+  Interaktive TUI zum Anzeigen/Ändern/Speichern von Feldern inkl. Auth, Blockwechsel, optional Hex-Ansicht.
 
-- MSR2 Telegramm-Transport (inkl. CRC)
-- stabiler Block-Scan mit konfigurierbarem Intervall
-- Dekodierung über vorbereitete Mapping-Dateien:
-  - `msr2_pack_master.json` (Struktur + Faktoren + Einheiten)
-  - `labels_master.properties` (deutsche Labels)
-- Ausgabe standardmäßig: `Label [Key] = Wert Einheit`
-- Ausgabe optional umschaltbar:
-  - `--text-only` => nur Label
-  - `--key-only` => nur `[Key]`
+- `auth_v2.py`  
+  Reiner Auth-Call (PW4-Berechnung + Level-Request/Grant).
 
-### Installation (frisches Raspberry Pi OS / Raspbian)
+---
 
-#### 1) Systempakete installieren
+## `dachs_cli_v2.py`
 
-```bash
-sudo apt update
-sudo apt install -y git python3 python3-venv python3-pip python3-serial
-```
+### Global
+- `--port` (Default `/dev/ttyUSB0`)
+- `--baud` (Default `19200`)
 
-#### 2) Repository klonen
-
-```bash
-git clone git@github.com:x3muha/dachs-cli.git
-cd dachs-cli
-```
-
-#### 3) Python-Umgebung erstellen
-
-```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install --upgrade pip
-pip install pyserial
-```
-
-#### 4) Serielle Berechtigung setzen (wichtig)
-
-```bash
-sudo usermod -aG dialout $USER
-```
-Danach einmal neu einloggen (oder reboot), damit `/dev/ttyUSB*` nutzbar ist.
-
-#### 5) Optional: UTF-8 für korrekte Umlaute
-
-```bash
-echo 'export LANG=C.UTF-8' >> ~/.bashrc
-echo 'export LC_ALL=C.UTF-8' >> ~/.bashrc
-echo 'export PYTHONIOENCODING=utf-8' >> ~/.bashrc
-source ~/.bashrc
-```
-
-### Nutzung
-
-```bash
-# Ein Block dekodiert lesen
-python dachs_cli.py --port /dev/ttyUSB0 read-block --block 22
-
-# Standard-Liveabfrage (ohne --blocks): 20,22,24,26
-python dachs_cli.py --port /dev/ttyUSB0 readall-decoded
-
-# Mehrere Blöcke dekodiert lesen (Default-Intervall 3.5s)
-python dachs_cli.py --port /dev/ttyUSB0 readall-decoded --blocks 20,22,24,26
-
-# Vollscan über alle gängigen Blöcke
-python dachs_cli.py --port /dev/ttyUSB0 readall-decoded \
-  --blocks 18,20,22,24,26,28,30,31,32,34,36,50,52,54,56,60,62,66,70,76,80,82,84,86,88,90,92,94,100,102,104,110,112,114
-
-# Reserve-/Res-Felder zusätzlich einblenden
-python dachs_cli.py --port /dev/ttyUSB0 readall-decoded --blocks 24 --show-reserved
-
-# Nur Textlabels anzeigen (ohne [Key])
-python dachs_cli.py --port /dev/ttyUSB0 readall-decoded --blocks 24 --text-only
-
-# Nur technische Keys anzeigen (ohne Label)
-python dachs_cli.py --port /dev/ttyUSB0 readall-decoded --blocks 24 --key-only
-
-# Optional: eigene Pack-/Label-Dateien erzwingen
-# (nur nötig, wenn du die Dateien selbst geändert hast oder sie nicht im Startverzeichnis liegen)
-python dachs_cli.py --port /dev/ttyUSB0 readall-decoded --blocks 24 \
-  --pack-file /pfad/zu/msr2_pack_master.json \
-  --labels-file /pfad/zu/labels_master.properties
-
-# Link-/Transporttest
-python dachs_cli.py --port /dev/ttyUSB0 watch-link --count 20 --interval 0.5
-```
-
-### Schalter / Optionen (wichtig)
-
-Global:
-- `--port` (Default: `/dev/ttyUSB0`)
-- `--baud` (Default: `19200`)
-
-`read-block`:
-- `--block` (Pflicht)
-- `--packet` (Default: `0`)
-- `--rx-timeout`
-
-`readall`:
-- `--blocks` (CSV)
-- `--interval` (Default: `3.5`)
-- `--loops`
-- `--rx-timeout`
-
-`readall-decoded`:
-- `--blocks` (CSV, Default: `20,22,24,26`)
-- `--interval` (Default: `3.5`)
-- `--loops`
-- `--rx-timeout`
-- `--pack-file` (optional, auto-lookup wenn nicht gesetzt)
-- `--labels-file` (optional, auto-lookup wenn nicht gesetzt)
-- `--show-reserved` (Reservefelder anzeigen)
-- `--text-only` (nur Textlabel anzeigen)
-- `--key-only` (nur `[Key]` anzeigen)
-
-`watch-link`:
+### `watch-link`
 - `--count`
 - `--interval`
 - `--rx-timeout`
 
-### Blockübersicht
+### `read-block`
+- `--block` (Pflicht)
+- `--packet`
+- `--rx-timeout`
 
-Siehe: `BLOCKS.md`
+### `readall`
+- `--blocks` (CSV)
+- `--interval`
+- `--loops`
+- `--rx-timeout`
+- `--wait-between-blocks` (optional; wenn gesetzt überschreibt Intervall als Block-Wartezeit)
 
-### Wichtige Dateien
+### `readall-decoded`
+- `--blocks` (CSV)
+- `--interval`
+- `--loops`
+- `--rx-timeout`
+- `--wait-between-blocks` (optional)
+- `--data-xml`
+- `--struct-dir`
+- `--format-dir`
+- `--pack-file` (Default: versioniertes Pack)
+- `--pack-rev` (Default: `50`)
+- `--labels-file`
+- `--show-reserved`
+- `--text-only`
+- `--key-only`
+- `--show-msr-menu-code`
 
-- `dachs_cli.py` – Haupt-CLI
-- `msr2_master_map.json` – kombinierte Mapping-Basis
-- `msr2_pack_master.json` – Laufzeit-Pack für Decode/Faktor/Einheiten
-- `labels_master.properties` – deutsche Labelzuordnung
-- `servicecodes_de.properties` – Servicecode-Texte (bundled, lokal)
-- `meldehist_types_de.properties` – MeldeHIST-Typtexte (bundled, lokal)
-
+### `list-keys`
+- `--mapping`
+- `--limit`
 
 ---
 
-## Script-Dokumentation (pro Datei)
+## `msr_backup_v2.py`
 
-- docs/README_dachs_cli.md
-- docs/README_dachs_cli_writer.md
-- docs/README_dachs_cli_writer_interactive.md
-- docs/README_dachs_cli_writer_tui.md
-- docs/README_msr2_module_cpu_test.md
-- docs/README_msr2_write_socket_probe.md
+- `--port`
+- `--baud`
+- `--rx-timeout`
+- `--pause-between-passes`
+- `--pause-between-blocks`
+- `--wait-between-blocks` (Alias zu `pause-between-blocks`)
+- `--blocks` (CSV Override; ohne Angabe: alle bekannten Blöcke aus Pack)
+- `--pack-file`
+- `--pack-rev`
+- `--output`
+- `--no-decode`
+- `--auth-level` (Default `5`, `<0` = Auth skip)
+- `--auth-pass4`
+- `--no-flush-before-read`
+- `--retry-on-timeout`
+
+---
+
+## `dachs_cli_writer_tui_v2.py`
+
+- `--port`
+- `--baud`
+- `--block` (Startblock)
+- `--all-blocks` (lädt bekannte Blöcke und erlaubt schnellen Blockwechsel)
+- `--auth-level` (Default `5`)
+- `--auth-pass4`
+- `--rx-timeout`
+- `--wait-between-blocks`
+- `--pack-file`
+- `--pack-rev`
+- `--dry-run`
+- `--show-reserved`
+- `--no-hex`
+
+### TUI-Shortcuts
+- `↑/↓`, `PgUp/PgDn`: Navigation
+- `Enter`: Inline-Edit im Feld
+- `b`: Block-Auswahlmodus (mit `↑/↓`, `Enter`)
+- `F2` / `s`: Speichern
+- `F4` / `r`: Reload
+- `F6`: Raw-Mode umschalten
+- `F10` / `Esc` / `q`: Beenden
+
+---
+
+## `auth_v2.py`
+
+- `--port`
+- `--baud`
+- `--rx-timeout`
+- `--auth-level` (Pflicht)
+- `--auth-pass4` (optional)
+- `--retries`
+- `--json`
+
+---
+
+## Kern-/Daten-Dateien
+
+- `dachs_core.py` – gemeinsamer Transport/Decode/Batch-Read-Core
+- `msr2_pack_master_version.json` – versioniertes Layout/Mapping
+- `msr2_formats_v2.json` – Format-/Value-Mapping
+- `msr_transport.py`, `msr_read.py`, `msr_decode.py` – modulare Re-Exports auf v2-Core
