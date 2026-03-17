@@ -56,6 +56,12 @@ def _materialize_pack_for_blocks(versioned_pack: Path, blocks: list[int], pack_r
     return tmp_pack, tmp_labels
 
 
+def _eff_port_baud(args):
+    p = getattr(args, 'port_local', None) or getattr(args, 'port', '/dev/ttyUSB0')
+    b = getattr(args, 'baud_local', None) or getattr(args, 'baud', 19200)
+    return p, int(b)
+
+
 def main():
     ap = argparse.ArgumentParser(prog="dachs-cli-v2")
     ap.add_argument("--port", default="/dev/ttyUSB0")
@@ -67,11 +73,15 @@ def main():
     p_link.add_argument("--count", type=int, default=20)
     p_link.add_argument("--interval", type=float, default=0.5)
     p_link.add_argument("--rx-timeout", type=float, default=0.8)
+    p_link.add_argument("--port", dest="port_local", default=None)
+    p_link.add_argument("--baud", dest="baud_local", type=int, default=None)
 
     p_rb = sub.add_parser("read-block")
     p_rb.add_argument("--block", required=True, type=lambda x: int(x, 0))
     p_rb.add_argument("--packet", type=lambda x: int(x, 0), default=0)
     p_rb.add_argument("--rx-timeout", type=float, default=0.9)
+    p_rb.add_argument("--port", dest="port_local", default=None)
+    p_rb.add_argument("--baud", dest="baud_local", type=int, default=None)
 
     p_ra = sub.add_parser("readall")
     p_ra.add_argument("--blocks", default="20,22,24,26,28,30,50,62,70,76")
@@ -79,6 +89,8 @@ def main():
     p_ra.add_argument("--loops", type=int, default=1)
     p_ra.add_argument("--rx-timeout", type=float, default=0.9)
     p_ra.add_argument("--wait-between-blocks", type=float, default=None)
+    p_ra.add_argument("--port", dest="port_local", default=None)
+    p_ra.add_argument("--baud", dest="baud_local", type=int, default=None)
 
     p_rd = sub.add_parser("readall-decoded")
     p_rd.add_argument("--blocks", default="20,22,24,26")
@@ -97,6 +109,8 @@ def main():
     p_rd.add_argument("--text-only", action="store_true")
     p_rd.add_argument("--key-only", action="store_true")
     p_rd.add_argument("--show-msr-menu-code", action="store_true")
+    p_rd.add_argument("--port", dest="port_local", default=None)
+    p_rd.add_argument("--baud", dest="baud_local", type=int, default=None)
 
     p_keys = sub.add_parser("list-keys")
     p_keys.add_argument("--mapping", default=str(Path(__file__).resolve().parent / "msr2_master_map.json"))
@@ -104,13 +118,15 @@ def main():
 
     args = ap.parse_args()
 
+    port, baud = _eff_port_baud(args)
+
     if args.cmd == "watch-link":
-        return v1.watch_link(args.port, args.baud, args.count, args.interval, args.rx_timeout)
+        return v1.watch_link(port, baud, args.count, args.interval, args.rx_timeout)
     if args.cmd == "read-block":
-        return v1.read_block(args.port, args.baud, args.block, args.packet, args.rx_timeout)
+        return v1.read_block(port, baud, args.block, args.packet, args.rx_timeout)
     if args.cmd == "readall":
         _wb = args.wait_between_blocks if args.wait_between_blocks is not None else args.interval
-        return v1.readall(args.port, args.baud, v1.parse_blocks(args.blocks), _wb, args.loops, args.rx_timeout)
+        return v1.readall(port, baud, v1.parse_blocks(args.blocks), _wb, args.loops, args.rx_timeout)
     if args.cmd == "list-keys":
         return v1.list_keys(Path(args.mapping), args.limit) or 0
 
@@ -147,8 +163,8 @@ def main():
             pack_use = pack
 
         return v1.readall_decoded(
-            args.port,
-            args.baud,
+            port,
+            baud,
             blocks,
             (args.wait_between_blocks if args.wait_between_blocks is not None else args.interval),
             args.loops,

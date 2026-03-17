@@ -30,6 +30,25 @@ def known_blocks_from_pack(p):
     return []
 
 
+def block_names_from_pack(p):
+    try:
+        obj = json.loads(Path(p).read_text())
+    except Exception:
+        return {}
+    out = {}
+    if isinstance(obj.get('blocks'), dict):
+        for k,v in obj.get('blocks', {}).items():
+            try:
+                bi = int(k)
+            except Exception:
+                continue
+            if isinstance(v, dict):
+                nm = v.get('block_name_de') or v.get('name_de') or v.get('title_de')
+                if isinstance(nm, str) and nm.strip():
+                    out[bi] = nm.strip()
+    return out
+
+
 def load_pack(p, blocks=None, pack_rev='50'):
     obj = json.loads(Path(p).read_text())
     if isinstance(obj.get('layouts'), dict):
@@ -63,6 +82,24 @@ def expected_len_from_layout(layout):
         if end > m:
             m = end
     return m
+
+
+def load_local_label_overrides():
+    p = Path('/root/senertec/dachs-cli/labels_master.properties')
+    if p.exists():
+        try:
+            return dc._load_labels(p)
+        except Exception:
+            return {}
+    return {}
+
+
+def labels_from_layout(layout):
+    out = {}
+    for e in (layout or []):
+        if isinstance(e, dict) and e.get('key') and e.get('label_de'):
+            out[e.get('key')] = e.get('label_de')
+    return out
 
 
 def field_map(layout):
@@ -153,6 +190,7 @@ def msr_pw4(serial_no, bstd):
 
 def auth_and_load(args):
     known_blocks = known_blocks_from_pack(args.pack_file)
+    block_names = block_names_from_pack(args.pack_file)
     if args.all_blocks and known_blocks:
         wanted = sorted(set([20,22] + known_blocks))
     else:
@@ -209,11 +247,9 @@ def auth_and_load(args):
         payload_cache = {int(args.block): bytes(payload)}
         preload_blocks = [int(b) for b in (known_blocks or []) if int(b) != int(args.block)] if args.all_blocks else []
 
-        labels = {}
-        for e in (layout or []):
-            if isinstance(e, dict) and e.get('key') and e.get('label_de'):
-                labels[e.get('key')] = e.get('label_de')
-        return {'layouts':layouts,'formats':formats,'labels':labels,'layout':layout,'fmap':fmap,'keys':keys,'payload':bytearray(payload),'pn':pn,'auth_requested':int(args.auth_level),'auth_granted':granted,'auth_line':f"AUTH pw4={pw4} ack={dc.to_hex(acka) if acka else '-'} rx={dc.to_hex(rxa) if rxa else '-'}",'known_blocks':known_blocks,'payload_cache':payload_cache,'preload_blocks':preload_blocks}
+        labels = labels_from_layout(layout)
+        labels.update(load_local_label_overrides())
+        return {'layouts':layouts,'formats':formats,'labels':labels,'layout':layout,'fmap':fmap,'keys':keys,'payload':bytearray(payload),'pn':pn,'auth_requested':int(args.auth_level),'auth_granted':granted,'auth_line':f"AUTH pw4={pw4} ack={dc.to_hex(acka) if acka else '-'} rx={dc.to_hex(rxa) if rxa else '-'}",'known_blocks':known_blocks,'block_names':block_names,'payload_cache':payload_cache,'preload_blocks':preload_blocks}
 
 
 def _read_key(stdscr):
@@ -274,6 +310,9 @@ def _build_ui_rows(keys, fmap):
     # prepare generic candidates: indexed byte arrays (>=2)
     generic_group = set()
     for base, arr in by_base.items():
+        # keep MeldeHIST arrays ungrouped (better readability and correct per-field formatting)
+        if base.startswith('MeldeHIST.'):
+            continue
         arrs = sorted(arr, key=lambda x: int(x.split('[')[1].split(']')[0]))
         if len(arrs) < 2:
             continue
@@ -410,6 +449,7 @@ def run_tui(stdscr, state, args):
     # fixed rows
     TITLE_Y = 0
     BLOCK_Y = 2
+    BLOCK_NAME_Y = 3
     STATUS_Y = 4
     AUTH_Y = 6
     INFO_Y = 8
@@ -510,6 +550,16 @@ def run_tui(stdscr, state, args):
         else:
             stdscr.addnstr(BLOCK_Y, bx, block_line, max(1, w-bx-1), curses.A_BOLD)
 
+        # block name line (from pack metadata)
+        bname = (state.get('block_names') or {}).get(int(cur_block), '')
+        if bname:
+            bline = f'[{bname}]'
+            bnx = max(0, (w - len(bline)) // 2)
+            if curses.has_colors():
+                stdscr.addnstr(BLOCK_NAME_Y, bnx, bline, max(1, w-bnx-1), curses.color_pair(6) | curses.A_BOLD)
+            else:
+                stdscr.addnstr(BLOCK_NAME_Y, bnx, bline, max(1, w-bnx-1), curses.A_BOLD)
+
         # status line
         req = state.get('auth_requested')
         grd = state.get('auth_granted')
@@ -577,6 +627,21 @@ def run_tui(stdscr, state, args):
         else:
             stdscr.addnstr(AUTH_Y, cx_auth, auth_msg, max(1, w-cx_auth-1), curses.A_BOLD)
 
+        # block picker overlay (via 'b')
+        if block_select_mode and block_list:
+            picker_items = []
+            for i,b in enumerate(block_list):
+                t = f"[{b}]" if i == block_idx else str(b)
+                picker_items.append(t)
+            picker = 'Blocks: ' + ' '.join(picker_items)
+            px = max(0, (w - len(picker)) // 2)
+            py = max(0, INFO_Y - 1)
+            if curses.has_colors():
+                stdscr.addnstr(py, 0, ' ' * max(1, w-1), max(1, w-1), curses.color_pair(3))
+                stdscr.addnstr(py, px, picker, max(1, w-px-1), curses.color_pair(1) | curses.A_BOLD)
+            else:
+                stdscr.addnstr(py, px, picker, max(1, w-px-1), curses.A_BOLD)
+
         # info row (save/reload/errors)
         info_txt = msg
         if (not info_txt) and (not preload_done):
@@ -603,10 +668,21 @@ def run_tui(stdscr, state, args):
                 break
             continue
 
-        name_w = max(16, min(32, int((w-6) * 0.28)))
-        obj_w  = max(14, min(30, int((w-6) * 0.24)))
-        val_w  = max(12, min(26, int((w-6) * 0.28)))
-        raw_w = max(8, min(14, int((w-6) * 0.14)))
+        # dynamic column widths (prefer wider 'Wert' column)
+        inner_target = max(44, w - 6)
+        raw_w = max(8, min(14, int(inner_target * 0.12)))
+        name_w = max(14, min(26, int(inner_target * 0.20)))
+        obj_w  = max(16, min(32, int(inner_target * 0.22)))
+        val_w  = max(18, inner_target - (name_w + obj_w + raw_w + 3))
+
+        # shrink name/obj if screen is narrow, keep value as large as possible
+        while (name_w + obj_w + val_w + raw_w + 3) > inner_target and (name_w > 12 or obj_w > 14):
+            if name_w >= obj_w and name_w > 12:
+                name_w -= 1
+            elif obj_w > 14:
+                obj_w -= 1
+            else:
+                break
         table_w = name_w + obj_w + val_w + raw_w + 3
         x0 = max(0, (w - table_w) // 2)
         x1 = x0 + name_w + 1
@@ -655,6 +731,34 @@ def run_tui(stdscr, state, args):
 
         dec = dc._decode_fields(bytes(payload), layout)
         dec_base = dc._decode_fields(bytes(baseline_payload), layout)
+
+        # block 18 helper: map idx -> compact melde event fields for inline row rendering
+        hist_map = {}
+        hist_cur = None
+        if int(args.block) == 18:
+            try:
+                hist_cur, hist_entries = dc._parse_block18_history(bytes(payload))
+                for e in (hist_entries or []):
+                    i = int(e.get('idx', -1))
+                    if i < 0:
+                        continue
+                    t = e.get('typ')
+                    wv = e.get('wert')
+                    m = e.get('modul')
+                    z = e.get('zeit')
+                    ztxt, _ = dc._apply_format('MeldeHIST.ulZeitstempel', z, state.get('formats', {}))
+                    code = dc._apply_meldecode_modifier(t, wv)
+                    tlabel = dc._melde_type_label(t, state.get('labels', {}))
+                    mlabel = 'Dachs' if int(m) == 1 else '-'
+                    vtxt = f"{ztxt} | Typ={t} ({tlabel}) | Wert={wv} ({dc._value_text_from_servicecode(wv)}) | Code={code} | Modul={m} ({mlabel})"
+                    hist_map[i] = {
+                        'vtxt': vtxt,
+                        'rawtxt': f"{int(z) if z is not None else 0}",
+                    }
+            except Exception:
+                hist_map = {}
+                hist_cur = None
+
         row_y = y0 + 2
         for i in range(top, min(len(ui_rows), top + visible)):
             row = ui_rows[i]
@@ -689,6 +793,18 @@ def run_tui(stdscr, state, args):
                 raw_base = raw_from_payload(bytes(baseline_payload), fmap[k])
                 _n2, _o2, base_vtxt, _r2 = _ui_name_obj_val_raw(k, decoded_base, raw_base, state.get('formats', {}), state.get('labels', {}))
                 name = f"{marker} {name}"
+
+                # block 18: keep table layout, but render event summary on timestamp rows
+                if int(args.block) == 18 and k.startswith('MeldeHIST.ulZeitstempel['):
+                    try:
+                        ii = int(k.split('[',1)[1].split(']',1)[0])
+                    except Exception:
+                        ii = None
+                    if ii is not None and ii in hist_map:
+                        vtxt = hist_map[ii]['vtxt']
+                        rawtxt = hist_map[ii]['rawtxt']
+                        if hist_cur is not None and int(hist_cur) == ii:
+                            name = f"{marker} <= aktuell {name}"
 
             attr = curses.color_pair(2) if (curses.has_colors() and i == idx) else (curses.color_pair(1) if curses.has_colors() else 0)
             if curses.has_colors() and row_changed:
@@ -757,7 +873,7 @@ def run_tui(stdscr, state, args):
                 stdscr.addnstr(y, table_left, txt, max(1, table_w), curses.color_pair(1) if curses.has_colors() else 0)
 
         # bottom centered key help in black bar
-        help1 = 'Arrows: navigate   Enter:edit   b:block-select   F2/s:save   F4/r:reload   F6:raw-toggle   F10/Esc/q:quit'
+        help1 = 'Up/Down: navigate   Left/Right: block   Enter:edit   b:block-select   F2/s:save   F4/r:reload   F6:raw-toggle   F10/Esc/q:quit'
         hx = max(0, (w - len(help1)) // 2)
         if curses.has_colors():
             stdscr.addnstr(h-1, 0, ' ' * max(1, w-1), max(1, w-1), curses.color_pair(8))
@@ -792,6 +908,9 @@ def run_tui(stdscr, state, args):
             changed.clear()
             layout = new_layout
             state['layout'] = layout
+            _lb = labels_from_layout(layout)
+            _lb.update(load_local_label_overrides())
+            state['labels'] = _lb
             state['fmap'] = fmap
             state['keys'] = keys
             state['payload'] = payload
@@ -808,7 +927,7 @@ def run_tui(stdscr, state, args):
             break
         elif ch in (ord('b'), ord('B')):
             block_select_mode = not block_select_mode
-            msg = 'block-select ON (UP/DOWN, Enter)' if block_select_mode else 'block-select OFF'
+            msg = 'block-select ON: UP/DOWN wählen, Enter laden, Esc abbrechen' if block_select_mode else 'block-select OFF'
         elif block_select_mode and ch == curses.KEY_UP:
             block_idx = max(0, block_idx-1)
             args.block = block_list[block_idx]
@@ -820,6 +939,20 @@ def run_tui(stdscr, state, args):
             block_select_mode = False
             idx = 0
             top = 0
+        elif ch == curses.KEY_LEFT:
+            if block_list:
+                block_idx = max(0, block_idx-1)
+                args.block = block_list[block_idx]
+                _reload_current_block()
+                idx = 0
+                top = 0
+        elif ch == curses.KEY_RIGHT:
+            if block_list:
+                block_idx = min(len(block_list)-1, block_idx+1)
+                args.block = block_list[block_idx]
+                _reload_current_block()
+                idx = 0
+                top = 0
         elif ch == curses.KEY_UP:
             idx = max(0, idx-1)
         elif ch == curses.KEY_DOWN:
@@ -838,6 +971,7 @@ def run_tui(stdscr, state, args):
             if edit_y < (y0 + 2) or edit_y >= h-1:
                 msg = 'row not visible'
                 continue
+            hist_edit_idx = None
             if row['kind'] == 'version':
                 vals = _read_version_from_payload(bytes(payload), row['keys'], fmap)
                 current_val = '.'.join(str(int(x)) for x in vals)
@@ -848,6 +982,22 @@ def run_tui(stdscr, state, args):
                     decoded_raw = dec.get(base_k)
                 raw_i = raw_from_payload(bytes(payload), fmap[k])
                 _n, _o, current_val, _r = _ui_name_obj_val_raw(k, decoded_raw, raw_i, state.get('formats', {}), state.get('labels', {}))
+
+                # block 18: edit full event tuple on timestamp rows
+                if int(args.block) == 18 and k.startswith('MeldeHIST.ulZeitstempel['):
+                    try:
+                        hist_edit_idx = int(k.split('[',1)[1].split(']',1)[0])
+                    except Exception:
+                        hist_edit_idx = None
+                    if hist_edit_idx is not None and hist_edit_idx in hist_map:
+                        ee = hist_map[hist_edit_idx]
+                        # editable format: "DD.MM.YYYY HH:MM:SS;typ;wert;modul"
+                        v = ee.get('vtxt','')
+                        dt = v.split(' | ',1)[0] if ' | ' in v else current_val
+                        typ = v.split('Typ=',1)[1].split(' ',1)[0] if 'Typ=' in v else '0'
+                        wert = v.split('Wert=',1)[1].split(' ',1)[0] if 'Wert=' in v else '0'
+                        modul = v.split('Modul=',1)[1].split(' ',1)[0] if 'Modul=' in v else '0'
+                        current_val = f"{dt};{typ};{wert};{modul}"
 
             val, ok = _inline_edit(stdscr, edit_y, x2+1, max(1, val_w-1), str(current_val))
             if not ok:
@@ -868,11 +1018,42 @@ def run_tui(stdscr, state, args):
                         changed.add(kk)
                     msg = f"OK {row['base']} -> " + '.'.join(str(x) for x in vals)
                 else:
-                    meta = fmap[k]
-                    raw = to_raw(val, k, meta, state['formats'], raw_mode)
-                    set_raw(payload, meta, raw)
-                    changed.add(k)
-                    msg = f"OK {k} -> raw={raw}"
+                    # block 18 timestamp rows: edit tuple date/time + typ + wert + modul
+                    if int(args.block) == 18 and hist_edit_idx is not None and k.startswith('MeldeHIST.ulZeitstempel['):
+                        txt = val.strip()
+                        parts = [x.strip() for x in txt.split(';')]
+                        if len(parts) != 4:
+                            raise ValueError('Format: DD.MM.YYYY HH:MM:SS;typ;wert;modul')
+                        dtxt, ttxt, wtxt, mtxt = parts
+                        raw_ty = int(ttxt)
+                        raw_we = int(wtxt)
+                        raw_mo = int(mtxt)
+                        if not (0 <= raw_ty <= 15 and 0 <= raw_we <= 255 and 0 <= raw_mo <= 15):
+                            raise ValueError('typ/modul 0..15, wert 0..255')
+
+                        # block18 wire layout: byte0 current, byte1..9 reserved, then 10 entries x 6 bytes
+                        base_off = 10 + (int(hist_edit_idx) * 6)
+                        if base_off + 6 > len(payload):
+                            raise ValueError('event offset out of payload range')
+
+                        # timestamp: explicit parse (format includes time)
+                        from datetime import datetime, timezone
+                        k_ts = f"MeldeHIST.ulZeitstempel[{hist_edit_idx}]"
+                        raw_ts = int(datetime.strptime(dtxt, '%d.%m.%Y %H:%M:%S').replace(tzinfo=timezone.utc).timestamp())
+
+                        payload[base_off] = int(raw_we) & 0xFF
+                        payload[base_off + 1] = ((int(raw_ty) & 0x0F) << 4) | (int(raw_mo) & 0x0F)
+                        payload[base_off + 2:base_off + 6] = int(raw_ts).to_bytes(4, 'little', signed=False)
+
+                        changed.add(k_ts)
+                        code = dc._apply_meldecode_modifier(raw_ty, raw_we)
+                        msg = f"OK event[{hist_edit_idx}] -> {dtxt};{raw_ty};{raw_we};{raw_mo} (code={code})"
+                    else:
+                        meta = fmap[k]
+                        raw = to_raw(val, k, meta, state['formats'], raw_mode)
+                        set_raw(payload, meta, raw)
+                        changed.add(k)
+                        msg = f"OK {k} -> raw={raw}"
             except Exception as e:
                 msg = f"ERR {e}"
         elif ch in (curses.KEY_F4, 268, ord('r'), ord('R')):
