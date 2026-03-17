@@ -3,7 +3,7 @@
 CLI-/TUI-Toolset für MSR2-Regler (lesen, dekodieren, sichern, schreiben).
 Alle v2-Tools nutzen das versionierte Pack (`msr2_pack_master_version.json`) und `dachs_core.py` als gemeinsame Basis.
 
-## Anwendungen (kurz)
+## Anwendungen
 
 - `dachs_cli_v2.py`  
   Lesen/Decodieren von Blöcken (`read-block`, `readall`, `readall-decoded`, `watch-link`).
@@ -23,8 +23,6 @@ Alle v2-Tools nutzen das versionierte Pack (`msr2_pack_master_version.json`) und
   Serial-Port (Standard: `/dev/ttyUSB0`).
 - `--baud`  
   Baudrate (Standard: `19200`).
-
-> Hinweis: `--port`/`--baud` gehen sowohl global **vor** als auch lokal **hinter** dem Subcommand.
 
 ### `watch-link`
 - `--count`  
