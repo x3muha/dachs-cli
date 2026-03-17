@@ -262,7 +262,6 @@ def _read_key(stdscr):
     for _ in range(5):
         c = stdscr.getch()
         if c == -1:
-            stop_bg['stop'] = True
             break
         seq.append(c)
     stdscr.nodelay(False)
@@ -982,14 +981,22 @@ def run_tui(stdscr, state, args):
                     decoded_raw = dec.get(base_k)
                 raw_i = raw_from_payload(bytes(payload), fmap[k])
                 _n, _o, current_val, _r = _ui_name_obj_val_raw(k, decoded_raw, raw_i, state.get('formats', {}), state.get('labels', {}))
+                if raw_mode:
+                    current_val = str(raw_i if raw_i is not None else '')
 
-                # block 18: edit full event tuple on timestamp rows
+                # block 18 timestamp rows: raw-mode edits raw ts, normal mode edits event tuple
                 if int(args.block) == 18 and k.startswith('MeldeHIST.ulZeitstempel['):
                     try:
                         hist_edit_idx = int(k.split('[',1)[1].split(']',1)[0])
                     except Exception:
                         hist_edit_idx = None
-                    if hist_edit_idx is not None and hist_edit_idx in hist_map:
+                    if raw_mode and hist_edit_idx is not None:
+                        base_off = 10 + (int(hist_edit_idx) * 6)
+                        if base_off + 6 <= len(payload):
+                            current_val = str(int.from_bytes(bytes(payload)[base_off+2:base_off+6], 'little', signed=False))
+                        else:
+                            current_val = str(int(raw_i) if raw_i is not None else 0)
+                    elif hist_edit_idx is not None and hist_edit_idx in hist_map:
                         ee = hist_map[hist_edit_idx]
                         # editable format: "DD.MM.YYYY HH:MM:SS;typ;wert;modul"
                         v = ee.get('vtxt','')
@@ -999,7 +1006,9 @@ def run_tui(stdscr, state, args):
                         modul = v.split('Modul=',1)[1].split(' ',1)[0] if 'Modul=' in v else '0'
                         current_val = f"{dt};{typ};{wert};{modul}"
 
-            val, ok = _inline_edit(stdscr, edit_y, x2+1, max(1, val_w-1), str(current_val))
+            edit_x = x3+1 if raw_mode else x2+1
+            edit_w = max(1, raw_w-1) if raw_mode else max(1, val_w-1)
+            val, ok = _inline_edit(stdscr, edit_y, edit_x, edit_w, str(current_val))
             if not ok:
                 msg = 'edit cancelled'
                 continue
@@ -1018,8 +1027,22 @@ def run_tui(stdscr, state, args):
                         changed.add(kk)
                     msg = f"OK {row['base']} -> " + '.'.join(str(x) for x in vals)
                 else:
+                    # block 18 timestamp rows: raw-mode edits raw timestamp directly
+                    if raw_mode and int(args.block) == 18 and hist_edit_idx is not None and k.startswith('MeldeHIST.ulZeitstempel['):
+                        raw_ts = int(str(val).strip())
+                        if not (0 <= raw_ts <= 0xFFFFFFFF):
+                            raise ValueError('raw timestamp out of range 0..4294967295')
+                        base_off = 10 + (int(hist_edit_idx) * 6)
+                        if base_off + 6 > len(payload):
+                            raise ValueError('event offset out of payload range')
+                        old_ts = int.from_bytes(bytes(payload)[base_off+2:base_off+6], 'little', signed=False)
+                        if raw_ts != old_ts:
+                            payload[base_off + 2:base_off + 6] = int(raw_ts).to_bytes(4, 'little', signed=False)
+                            changed.add(k)
+                        msg = f"OK raw {k} -> {raw_ts}"
+
                     # block 18 timestamp rows: edit tuple date/time + typ + wert + modul
-                    if int(args.block) == 18 and hist_edit_idx is not None and k.startswith('MeldeHIST.ulZeitstempel['):
+                    elif (not raw_mode) and int(args.block) == 18 and hist_edit_idx is not None and k.startswith('MeldeHIST.ulZeitstempel['):
                         txt = val.strip()
                         parts = [x.strip() for x in txt.split(';')]
                         if len(parts) != 4:
@@ -1039,7 +1062,9 @@ def run_tui(stdscr, state, args):
                         # timestamp: explicit parse (format includes time)
                         from datetime import datetime, timezone
                         k_ts = f"MeldeHIST.ulZeitstempel[{hist_edit_idx}]"
-                        raw_ts = int(datetime.strptime(dtxt, '%d.%m.%Y %H:%M:%S').replace(tzinfo=timezone.utc).timestamp())
+                        dt_obj = datetime.strptime(dtxt, '%d.%m.%Y %H:%M:%S').replace(tzinfo=timezone.utc)
+                        base = datetime(2000, 1, 1, tzinfo=timezone.utc)
+                        raw_ts = int((dt_obj - base).total_seconds())
 
                         payload[base_off] = int(raw_we) & 0xFF
                         payload[base_off + 1] = ((int(raw_ty) & 0x0F) << 4) | (int(raw_mo) & 0x0F)
