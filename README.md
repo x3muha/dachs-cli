@@ -196,3 +196,86 @@ Alle v2-Tools nutzen das versionierte Pack (`msr2_pack_master_version.json`) und
 - `msr2_formats_v2.json` – Format-/Value-Mapping
 - `labels_master.properties` – lokale Label-/Suffix-Overrides
 - `msr_transport.py`, `msr_read.py`, `msr_decode.py` – modulare Re-Exports auf v2-Core
+
+---
+
+## Startbeispiele (Copy & Paste)
+
+### `dachs_cli_v2.py`
+
+- Link beobachten (5 Zyklen):
+```bash
+python3 dachs_cli_v2.py --port /dev/ttyUSB0 watch-link --count 5 --interval 1
+```
+
+- Einzelnen Block roh lesen:
+```bash
+python3 dachs_cli_v2.py --port /dev/ttyUSB0 read-block --block 20
+```
+
+- Mehrere Blöcke lesen (roh):
+```bash
+python3 dachs_cli_v2.py --port /dev/ttyUSB0 readall --blocks 20,22,24 --loops 1 --wait-between-blocks 0
+```
+
+- Dekodiert lesen (Block 18):
+```bash
+python3 dachs_cli_v2.py --port /dev/ttyUSB0 readall-decoded --blocks 18 --pack-rev 50 --loops 1
+```
+
+- Dekodiert lesen mit Menücodes:
+```bash
+python3 dachs_cli_v2.py --port /dev/ttyUSB0 readall-decoded --blocks 20,22 --pack-rev 50 --show-msr-menu-code
+```
+
+### `msr_backup_v2.py`
+
+- Standard-Backup (alle bekannten Pack-Blöcke):
+```bash
+python3 msr_backup_v2.py --port /dev/ttyUSB0 --pack-rev 50
+```
+
+- Backup mit eigener Blockliste:
+```bash
+python3 msr_backup_v2.py --port /dev/ttyUSB0 --blocks 18,20,22,24,26 --pack-rev 50
+```
+
+- Backup ohne Decode (nur Rohdaten):
+```bash
+python3 msr_backup_v2.py --port /dev/ttyUSB0 --no-decode --pack-rev 50
+```
+
+### `dachs_cli_writer_tui_v2.py`
+
+- TUI auf Startblock 20 (nur aktueller Block, kein All-Blocks-Preload):
+```bash
+python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --block 20 --pack-rev 50
+```
+
+- TUI auf Block 20 + Rest im Hintergrund puffern (`--all-blocks`):
+```bash
+python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --block 20 --pack-rev 50 --all-blocks --rx-timeout 0.9 --wait-between-blocks 0
+```
+
+- TUI auf Block 18 (Meldungsliste) mit All-Blocks-Buffer:
+```bash
+python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --block 18 --pack-rev 50 --all-blocks
+```
+
+- TUI Dry-Run (Änderungen testen ohne echten Write):
+```bash
+python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --block 22 --pack-rev 50 --dry-run
+```
+
+### `auth_v2.py`
+
+- Auth-Level 5 als JSON testen:
+```bash
+python3 auth_v2.py --port /dev/ttyUSB0 --auth-level 5 --json
+```
+
+- Auth mit manuellem PW4:
+```bash
+python3 auth_v2.py --port /dev/ttyUSB0 --auth-level 5 --auth-pass4 3478 --json
+```
+
