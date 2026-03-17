@@ -535,30 +535,6 @@ def _cleanup_label_for_display(key: str, label: str) -> str:
         if not l.startswith('MW2 '):
             l = 'MW2 ' + l
 
-    # explicit rename: Kapseltemperatur without condenser suffix
-    if kb.endswith('.Temp.sKapsel'):
-        if re.match(r'^Hka_BZbeiSC_Mw1_\d+L\.', kb):
-            return 'MW1 Kapseltemperatur' + _phase_suffix(key)
-        if re.match(r'^Hka_BZbeiSC_Mw2_\d+L\.', kb):
-            return 'MW2 Kapseltemperatur' + _phase_suffix(key)
-        return 'Kapseltemperatur' + _phase_suffix(key)
-    if kb.endswith('.MaxTemp.sKapsel'):
-        return 'Maximale Kapseltemperatur' + _phase_suffix(key)
-
-    # targeted cleanup for technical/cryptic labels
-    suffix_overrides = {
-        '.Hka_UC.ubFehlerGrundMc1': 'Fehlergrund MC1',
-        '.Hka_UC.ubFehlerCodeMc1': 'Fehlercode MC1',
-        '.Hka_UC.ubFehlerGrundMc2': 'Fehlergrund MC2',
-        '.Hka_UC.ubFehlerCodeMc2': 'Fehlercode MC2',
-        '.Hka_UC.ubSchutzartMc1': 'Schutzart MC1',
-        '.Hka_UC.ubSchutzartMc2': 'Schutzart MC2',
-        '.Hka_UC.ausPhi': 'Phi',
-    }
-    for suf, txt in suffix_overrides.items():
-        if kb.endswith(suf):
-            return txt + _phase_suffix(key)
-
     # generic polish
     l = re.sub(r'^(ub|aus|sb|us|ul|uch|s|b|a)\s+', '', l)
     l = l.replace(' Mc1', ' MC1').replace(' Mc2', ' MC2')
@@ -616,6 +592,21 @@ def _label_for_key(key: str, labels: dict) -> str:
     n_key = re.sub(r'^Hka_BZbeiSC_Mw2_\d+L\.', 'Hka_Mw2.', n_key)
     if n != kb or n_key != key:
         cands += [n_key, n_key + '.presenter', n_key + '.Short', n, n + '.presenter', n + '.Short']
+
+    # suffix-label overrides from labels file (e.g. '*.Hka_UC.ubFehlerCodeMc1=Fehlercode MC1')
+    # apply BEFORE exact key labels so local overrides can replace source labels cleanly
+    for lk, lv in (labels or {}).items():
+        if not isinstance(lk, str) or not isinstance(lv, str):
+            continue
+        if not lv.strip():
+            continue
+        suf = None
+        if lk.startswith('*.'):
+            suf = lk[1:]   # keep leading dot
+        elif lk.startswith('.'):
+            suf = lk
+        if suf and kb.endswith(suf):
+            return _cleanup_label_for_display(key, _strip_html_label(lv) + _phase_suffix(key))
 
     for c in cands:
         if c in labels and str(labels[c]).strip():
@@ -1386,6 +1377,10 @@ def readall_decoded(port: str, baud: int, blocks: list[int], interval: float, lo
     )
 
     labels = _load_labels(labels_file) if labels_file else {}
+    # local custom overrides should always win (suffix rules, manual renames)
+    local_labels = _resolve_optional_file(None, [cwd / 'labels_master.properties', script_dir / 'labels_master.properties'])
+    if local_labels:
+        labels.update(_load_labels(local_labels))
     if pack_file and pack_file.exists():
         p = json.loads(pack_file.read_text())
         fmap = p.get('formats', {})

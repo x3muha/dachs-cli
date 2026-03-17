@@ -55,7 +55,8 @@
           "size": 40
         }
       ],
-      "variants": []
+      "variants": [],
+      "block_name_de": "Meldungsliste"
     },
     "20": {
       "versions": [
@@ -361,7 +362,8 @@
             }
           ]
         }
-      ]
+      ],
+      "block_name_de": "System Info"
     },
     "22": {
       "versions": [
@@ -2317,7 +2319,8 @@
             }
           ]
         }
-      ]
+      ],
+      "block_name_de": "Laufzeit Energie"
     },
     "24": {
       "versions": [
@@ -2993,7 +2996,8 @@
           "size": 8
         }
       ],
-      "variants": []
+      "variants": [],
+      "block_name_de": "Motor/Temperaturen"
     },
     "26": {
       "versions": [
@@ -3151,7 +3155,8 @@
           "size": 18
         }
       ],
-      "variants": []
+      "variants": [],
+      "block_name_de": "Stromnetz"
     },
     "28": {
       "versions": [
