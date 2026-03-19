@@ -518,6 +518,8 @@ def run_tui(stdscr, state, args):
 
     stdscr.timeout(80)
     changed = set()
+    hide_name = bool(hide_name)
+    hide_object = bool(hide_object)
 
     while True:
         h, w = stdscr.getmaxyx()
@@ -667,21 +669,137 @@ def run_tui(stdscr, state, args):
                 break
             continue
 
-        # dynamic column widths (prefer wider 'Wert' column)
-        inner_target = max(44, w - 6)
-        raw_w = max(8, min(14, int(inner_target * 0.12)))
-        name_w = max(14, min(26, int(inner_target * 0.20)))
-        obj_w  = max(16, min(32, int(inner_target * 0.22)))
-        val_w  = max(18, inner_target - (name_w + obj_w + raw_w + 3))
+        # precompute decoded maps for dynamic width sizing
+        dec = dc._decode_fields(bytes(payload), layout)
+        dec_base = dc._decode_fields(bytes(baseline_payload), layout)
 
-        # shrink name/obj if screen is narrow, keep value as large as possible
-        while (name_w + obj_w + val_w + raw_w + 3) > inner_target and (name_w > 12 or obj_w > 14):
-            if name_w >= obj_w and name_w > 12:
+        # estimate dynamic content widths (Raw/Wert)
+        raw_need = 10
+        val_need = 16
+        name_need = 12
+        obj_need = 12
+        sample_rows = ui_rows[:min(len(ui_rows), 120)]
+        for rr in sample_rows:
+            try:
+                if rr.get('kind') == 'version':
+                    base_k = rr.get('base','')
+                    label = dc._label_for_key(base_k, state.get('labels', {}))
+                    obj = base_k.split('.')[-1] if base_k else ''
+                    vals = _read_version_from_payload(bytes(payload), rr.get('keys', []), fmap)
+                    if ('version' in str(base_k).lower()) or (base_k in VERSION_BASES):
+                        vtxt = '.'.join(str(int(x)) for x in vals)
+                    else:
+                        vtxt = ','.join(str(int(x)) for x in vals)
+                    rtxt = vtxt
+                    name = f"  {label}"
+                else:
+                    kk = rr.get('key')
+                    if not kk or kk not in fmap:
+                        continue
+                    base_k = kk.split('[', 1)[0]
+                    decoded_raw = dec.get(kk)
+                    if decoded_raw is None:
+                        decoded_raw = dec.get(base_k)
+                    rv = raw_from_payload(bytes(payload), fmap[kk])
+                    name, obj, vtxt, rtxt = _ui_name_obj_val_raw(kk, decoded_raw, rv, state.get('formats', {}), state.get('labels', {}))
+                    name = f"  {name}"
+
+                    # block 18 raw/value preview tweaks
+                    if int(args.block) == 18 and kk.startswith('MeldeHIST.ulZeitstempel['):
+                        try:
+                            ii = int(kk.split('[',1)[1].split(']',1)[0])
+                            bo = 10 + ii * 6
+                            if bo + 6 <= len(payload):
+                                ts = int.from_bytes(bytes(payload)[bo+2:bo+6], 'little', signed=False)
+                                we = int(bytes(payload)[bo])
+                                mix = int(bytes(payload)[bo+1])
+                                ty = (mix >> 4) & 0x0F
+                                mo = mix & 0x0F
+                                tlabel = dc._melde_type_label(ty, state.get('labels', {}))
+                                code = dc._apply_meldecode_modifier(ty, we)
+                                mlabel = 'Dachs' if mo == 1 else '-'
+                                ztxt, _ = dc._apply_format('MeldeHIST.ulZeitstempel', ts, state.get('formats', {}))
+                                vtxt = f"{ztxt} | Typ={ty} ({tlabel}) | Wert={we} ({dc._value_text_from_servicecode(we)}) | Code={code} | Modul={mo} ({mlabel})"
+                                rtxt = f"{ts};{ty};{we};{mo}"
+                        except Exception:
+                            pass
+
+                name_need = max(name_need, len(str(name)))
+                obj_need  = max(obj_need, len(str(obj)))
+                val_need  = max(val_need, len(str(vtxt)))
+                raw_need  = max(raw_need, len(str(rtxt)))
+            except Exception:
+                pass
+
+        # optional column visibility
+        if hide_name:
+            name_need = 0
+        if hide_object:
+            obj_need = 0
+
+        # caps to avoid absurd outliers
+        name_need = min(name_need + (0 if hide_name else 1), 40)
+        obj_need  = min(obj_need + (0 if hide_object else 1), 40)
+        val_need  = min(val_need + 1, 120)
+        raw_need  = min(raw_need + 1, 120)
+
+        # cap growth: max need + 5 chars
+        max_name = name_need + 5
+        max_obj  = obj_need + 5
+        max_val  = val_need + 5
+        max_raw  = raw_need + 5
+
+        inner_target = max(44, w - 6)
+        sep = 3
+
+        # start with "as needed"
+        name_w = min(name_need, max_name)
+        obj_w  = min(obj_need, max_obj)
+        val_w  = min(val_need, max_val)
+        raw_w  = min(raw_need, max_raw)
+
+        # minimums
+        min_name = 0 if hide_name else 8
+        min_obj  = 0 if hide_object else 8
+        min_val  = 10
+        min_raw  = 10
+
+        # if too wide: shrink Name+Objekt first (as requested)
+        while (name_w + obj_w + val_w + raw_w + sep) > inner_target and (name_w > min_name or obj_w > min_obj):
+            if name_w >= obj_w and name_w > min_name:
                 name_w -= 1
-            elif obj_w > 14:
+            elif obj_w > min_obj:
                 obj_w -= 1
+            elif name_w > min_name:
+                name_w -= 1
             else:
                 break
+
+        # if still too wide, shrink Wert/Raw only as needed
+        while (name_w + obj_w + val_w + raw_w + sep) > inner_target and (val_w > min_val or raw_w > min_raw):
+            if raw_w >= val_w and raw_w > min_raw:
+                raw_w -= 1
+            elif val_w > min_val:
+                val_w -= 1
+            elif raw_w > min_raw:
+                raw_w -= 1
+            else:
+                break
+
+        # if there is free space: give it to current mode focus, then the other dynamic column
+        free = inner_target - (name_w + obj_w + val_w + raw_w + sep)
+        if free > 0:
+            if raw_mode:
+                add = min(free, max(0, min(raw_need, max_raw) - raw_w)); raw_w += add; free -= add
+                add = min(free, max(0, min(val_need, max_val) - val_w)); val_w += add; free -= add
+            else:
+                add = min(free, max(0, min(val_need, max_val) - val_w)); val_w += add; free -= add
+                add = min(free, max(0, min(raw_need, max_raw) - raw_w)); raw_w += add; free -= add
+            # remaining free width goes to obj/name (capped at need+5)
+            if free > 0:
+                add_obj = min(free // 2, max(0, max_obj - obj_w)); obj_w += add_obj; free -= add_obj
+                add_name = min(free, max(0, max_name - name_w)); name_w += add_name; free -= add_name
+
         table_w = name_w + obj_w + val_w + raw_w + 3
         x0 = max(0, (w - table_w) // 2)
         x1 = x0 + name_w + 1
@@ -689,8 +807,10 @@ def run_tui(stdscr, state, args):
         x3 = x2 + val_w + 1
 
         h_attr = (curses.color_pair(1) | curses.A_BOLD) if curses.has_colors() else curses.A_BOLD
-        stdscr.addnstr(y0, x0+3, 'Name', max(1, name_w-3), h_attr)
-        stdscr.addnstr(y0, x1+1, 'Objekt', max(1, obj_w-1), h_attr)
+        if name_w > 0:
+            stdscr.addnstr(y0, x0+1, 'Name', max(1, name_w-1), h_attr)
+        if obj_w > 0:
+            stdscr.addnstr(y0, x1+1, 'Objekt', max(1, obj_w-1), h_attr)
         stdscr.addnstr(y0, x2+1, 'Wert', max(1, val_w-1), h_attr)
         stdscr.addnstr(y0, x3+1, 'Raw', max(1, raw_w-1), h_attr)
 
@@ -721,15 +841,12 @@ def run_tui(stdscr, state, args):
                     stdscr.addch(hdr_sep, xx, ord('-'))
 
         for yy in range(y0, sep_end):
-            if x1 < right: stdscr.addch(yy, x1, ord('|'))
-            if x2 < right: stdscr.addch(yy, x2, ord('|'))
+            if name_w > 0 and x1 < right: stdscr.addch(yy, x1, ord('|'))
+            if obj_w > 0 and x2 < right: stdscr.addch(yy, x2, ord('|'))
             if x3 < right: stdscr.addch(yy, x3, ord('|'))
 
         if idx < top: top = idx
         if idx >= top + visible: top = idx - visible + 1
-
-        dec = dc._decode_fields(bytes(payload), layout)
-        dec_base = dc._decode_fields(bytes(baseline_payload), layout)
 
         # block 18 helper: map idx -> compact melde event fields for inline row rendering
         hist_map = {}
@@ -752,7 +869,7 @@ def run_tui(stdscr, state, args):
                     vtxt = f"{ztxt} | Typ={t} ({tlabel}) | Wert={wv} ({dc._value_text_from_servicecode(wv)}) | Code={code} | Modul={m} ({mlabel})"
                     hist_map[i] = {
                         'vtxt': vtxt,
-                        'rawtxt': f"{int(z) if z is not None else 0}",
+                        'rawtxt': f"{int(z) if z is not None else 0};{int(t) if t is not None else 0};{int(wv) if wv is not None else 0};{int(m) if m is not None else 0}",
                     }
             except Exception:
                 hist_map = {}
@@ -814,8 +931,10 @@ def run_tui(stdscr, state, args):
             if (not curses.has_colors()) and i == idx:
                 stdscr.attron(curses.A_REVERSE)
 
-            stdscr.addnstr(row_y, x0+1, name, max(1, name_w-1), attr)
-            stdscr.addnstr(row_y, x1+1, obj, max(1, obj_w-1), attr)
+            if name_w > 0:
+                stdscr.addnstr(row_y, x0+1, name, max(1, name_w-1), attr)
+            if obj_w > 0:
+                stdscr.addnstr(row_y, x1+1, obj, max(1, obj_w-1), attr)
             if curses.has_colors() and row_changed:
                 _draw_diff_text(stdscr, row_y, x2+1, max(1, val_w-1), vtxt, base_vtxt, attr, curses.color_pair(4) | curses.A_BOLD)
                 stdscr.addnstr(row_y, x3+1, rawtxt, max(1, raw_w-1), attr)
@@ -872,7 +991,7 @@ def run_tui(stdscr, state, args):
                 stdscr.addnstr(y, table_left, txt, max(1, table_w), curses.color_pair(1) if curses.has_colors() else 0)
 
         # bottom centered key help in black bar
-        help1 = 'Up/Down: navigate   Left/Right: block   Enter:edit   b:block-select   F2/s:save   F4/r:reload   F6:raw-toggle   F10/Esc/q:quit'
+        help1 = 'Up/Down: navigate   Left/Right: block   Enter:edit   b:block-select   n:name on/off   o:objekt on/off   F2/s:save   F4/r:reload   F6:raw-toggle   F10/Esc/q:quit'
         hx = max(0, (w - len(help1)) // 2)
         if curses.has_colors():
             stdscr.addnstr(h-1, 0, ' ' * max(1, w-1), max(1, w-1), curses.color_pair(8))
@@ -960,6 +1079,12 @@ def run_tui(stdscr, state, args):
             idx = min(len(ui_rows)-1, idx + max(1, visible-1))
         elif ch == curses.KEY_PPAGE:
             idx = max(0, idx - max(1, visible-1))
+        elif ch in (ord('n'), ord('N')):
+            hide_name = not hide_name
+            msg = f"name column {'OFF' if hide_name else 'ON'}"
+        elif ch in (ord('o'), ord('O')):
+            hide_object = not hide_object
+            msg = f"objekt column {'OFF' if hide_object else 'ON'}"
         elif ch in (curses.KEY_F6, 270):
             raw_mode = not raw_mode
             msg = f"raw_mode={'ON' if raw_mode else 'OFF'}"
@@ -993,7 +1118,13 @@ def run_tui(stdscr, state, args):
                     if raw_mode and hist_edit_idx is not None:
                         base_off = 10 + (int(hist_edit_idx) * 6)
                         if base_off + 6 <= len(payload):
-                            current_val = str(int.from_bytes(bytes(payload)[base_off+2:base_off+6], 'little', signed=False))
+                            ts_raw = int.from_bytes(bytes(payload)[base_off+2:base_off+6], 'little', signed=False)
+                            wert_raw = int(bytes(payload)[base_off])
+                            mix_raw = int(bytes(payload)[base_off+1])
+                            typ_raw = (mix_raw >> 4) & 0x0F
+                            modul_raw = mix_raw & 0x0F
+                            # raw tuple: ts;typ;wert;modul
+                            current_val = f"{ts_raw};{typ_raw};{wert_raw};{modul_raw}"
                         else:
                             current_val = str(int(raw_i) if raw_i is not None else 0)
                     elif hist_edit_idx is not None and hist_edit_idx in hist_map:
@@ -1029,17 +1160,39 @@ def run_tui(stdscr, state, args):
                 else:
                     # block 18 timestamp rows: raw-mode edits raw timestamp directly
                     if raw_mode and int(args.block) == 18 and hist_edit_idx is not None and k.startswith('MeldeHIST.ulZeitstempel['):
-                        raw_ts = int(str(val).strip())
-                        if not (0 <= raw_ts <= 0xFFFFFFFF):
-                            raise ValueError('raw timestamp out of range 0..4294967295')
+                        txt = str(val).strip()
+                        parts = [x.strip() for x in txt.split(';') if x.strip() != '']
                         base_off = 10 + (int(hist_edit_idx) * 6)
                         if base_off + 6 > len(payload):
                             raise ValueError('event offset out of payload range')
-                        old_ts = int.from_bytes(bytes(payload)[base_off+2:base_off+6], 'little', signed=False)
-                        if raw_ts != old_ts:
-                            payload[base_off + 2:base_off + 6] = int(raw_ts).to_bytes(4, 'little', signed=False)
-                            changed.add(k)
-                        msg = f"OK raw {k} -> {raw_ts}"
+
+                        if len(parts) == 1:
+                            # backward-compatible: only timestamp raw
+                            raw_ts = int(parts[0])
+                            if not (0 <= raw_ts <= 0xFFFFFFFF):
+                                raise ValueError('raw timestamp out of range 0..4294967295')
+                            old_ts = int.from_bytes(bytes(payload)[base_off+2:base_off+6], 'little', signed=False)
+                            if raw_ts != old_ts:
+                                payload[base_off + 2:base_off + 6] = int(raw_ts).to_bytes(4, 'little', signed=False)
+                                changed.add(k)
+                            msg = f"OK raw {k} -> {raw_ts}"
+                        elif len(parts) == 4:
+                            # raw tuple: ts;typ;wert;modul
+                            raw_ts = int(parts[0]); raw_ty = int(parts[1]); raw_we = int(parts[2]); raw_mo = int(parts[3])
+                            if not (0 <= raw_ts <= 0xFFFFFFFF):
+                                raise ValueError('raw timestamp out of range 0..4294967295')
+                            if not (0 <= raw_ty <= 15 and 0 <= raw_we <= 255 and 0 <= raw_mo <= 15):
+                                raise ValueError('raw tuple range: ts(0..4294967295); typ/modul(0..15); wert(0..255)')
+                            old = bytes(payload)[base_off:base_off+6]
+                            mix = ((raw_ty & 0x0F) << 4) | (raw_mo & 0x0F)
+                            payload[base_off] = raw_we & 0xFF
+                            payload[base_off+1] = mix & 0xFF
+                            payload[base_off+2:base_off+6] = int(raw_ts).to_bytes(4, 'little', signed=False)
+                            if bytes(payload)[base_off:base_off+6] != old:
+                                changed.add(k)
+                            msg = f"OK raw event[{hist_edit_idx}] -> {raw_ts};{raw_ty};{raw_we};{raw_mo}"
+                        else:
+                            raise ValueError('Raw-Format: ts ODER ts;typ;wert;modul')
 
                     # block 18 timestamp rows: edit tuple date/time + typ + wert + modul
                     elif (not raw_mode) and int(args.block) == 18 and hist_edit_idx is not None and k.startswith('MeldeHIST.ulZeitstempel['):
@@ -1133,6 +1286,8 @@ def main():
     ap.add_argument('--pack-rev', default='50')
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--show-reserved', action='store_true')
+    ap.add_argument('--hide-name', action='store_true', help='hide Name column')
+    ap.add_argument('--hide-object', '--hide-objekt', dest='hide_object', action='store_true', help='hide Objekt column')
     ap.add_argument('--no-hex', action='store_true', help='disable hex section under table')
     args = ap.parse_args()
 

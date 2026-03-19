@@ -1154,6 +1154,19 @@ def _apply_format(key: str, val, fmap):
             return f"{iv} ({t})", ''
         except Exception:
             pass
+
+    # minute fields: show human-friendly h/m from raw minutes
+    if kb_live.endswith('_min'):
+        try:
+            mins = int(round(v))
+            if mins >= 60:
+                h = mins // 60
+                m = mins % 60
+                return f"{h}h {m}m", ''
+            return f"{mins} min", ''
+        except Exception:
+            pass
+
     # generic value mapping from pack/formats (data-driven)
     vm = f.get('value_map') or f.get('enum') or f.get('choices') or {}
     if isinstance(vm, dict) and vm:

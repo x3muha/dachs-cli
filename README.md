@@ -153,6 +153,10 @@ Alle v2-Tools nutzen das versionierte Pack (`msr2_pack_master_version.json`) und
   Änderungen lokal testen, ohne echten Write.
 - `--show-reserved`  
   Reservierte Felder anzeigen.
+- `--hide-name`  
+  Name-Spalte ausblenden (mehr Platz für Wert/Raw).
+- `--hide-object` / `--hide-objekt`  
+  Objekt-Spalte ausblenden (mehr Platz für Wert/Raw).
 - `--no-hex`  
   HEX-Bereich unten ausblenden.
 
@@ -161,6 +165,8 @@ Alle v2-Tools nutzen das versionierte Pack (`msr2_pack_master_version.json`) und
 - `←/→`: Block vor/zurück
 - `Enter`: Inline-Edit
 - `b`: Blockliste öffnen (`↑/↓`, `Enter`, `Esc`)
+- `n`: Name-Spalte live ein/aus
+- `o`: Objekt-Spalte live ein/aus
 - `F2` / `s`: Speichern
 - `F4` / `r`: Reload aktueller Block
 - `F6`: Raw-Mode umschalten
@@ -277,3 +283,8 @@ python3 auth_v2.py --port /dev/ttyUSB0 --auth-level 5 --json
 python3 auth_v2.py --port /dev/ttyUSB0 --auth-level 5 --auth-pass4 3478 --json
 ```
 
+
+- TUI mit maximalem Platz für Wert/Raw (Name+Objekt aus):
+```bash
+python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --block 18 --pack-rev 50 --all-blocks --hide-name --hide-object
+```
