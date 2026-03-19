@@ -2115,5 +2115,49 @@
         "1": "Berlin"
       }
     }
+  },
+  "Hka_Mw2.Hka_UC.ubFehlerCodeMc1": {
+    "value_map": {
+      "25": "Inselnetzerkennung (Impedanzsprung > 1 Ohm)",
+      "33": "Spannungssteigerungsschutz U> (10-Min-Mittelwert > 253 V)",
+      "37": "Wirkleistungsreduktion Überfrequenz",
+      "38": "Spannungssteigerungsschutz U>> (Spannung > 264 V)",
+      "39": "Spannungsrückgangsschutz U< (Spannung < 184 V)",
+      "40": "Frequenzsteigerungsschutz f> (Frequenz > 51,5 Hz)",
+      "41": "Frequenzrückgangsschutz f< (Frequenz < 47,5 Hz)"
+    }
+  },
+  "Hka_Mw2.Hka_UC.ubFehlerCodeMc2": {
+    "value_map": {
+      "25": "Inselnetzerkennung (Impedanzsprung > 1 Ohm)",
+      "33": "Spannungssteigerungsschutz U> (10-Min-Mittelwert > 253 V)",
+      "37": "Wirkleistungsreduktion Überfrequenz",
+      "38": "Spannungssteigerungsschutz U>> (Spannung > 264 V)",
+      "39": "Spannungsrückgangsschutz U< (Spannung < 184 V)",
+      "40": "Frequenzsteigerungsschutz f> (Frequenz > 51,5 Hz)",
+      "41": "Frequenzrückgangsschutz f< (Frequenz < 47,5 Hz)"
+    }
+  },
+  "Hka_Mw2.Hka_UC.ubSchutzartMc1": {
+    "value_map": {
+      "25": "Inselnetzerkennung (Impedanzsprung > 1 Ohm)",
+      "33": "Spannungssteigerungsschutz U> (10-Min-Mittelwert > 253 V)",
+      "37": "Wirkleistungsreduktion Überfrequenz",
+      "38": "Spannungssteigerungsschutz U>> (Spannung > 264 V)",
+      "39": "Spannungsrückgangsschutz U< (Spannung < 184 V)",
+      "40": "Frequenzsteigerungsschutz f> (Frequenz > 51,5 Hz)",
+      "41": "Frequenzrückgangsschutz f< (Frequenz < 47,5 Hz)"
+    }
+  },
+  "Hka_Mw2.Hka_UC.ubSchutzartMc2": {
+    "value_map": {
+      "25": "Inselnetzerkennung (Impedanzsprung > 1 Ohm)",
+      "33": "Spannungssteigerungsschutz U> (10-Min-Mittelwert > 253 V)",
+      "37": "Wirkleistungsreduktion Überfrequenz",
+      "38": "Spannungssteigerungsschutz U>> (Spannung > 264 V)",
+      "39": "Spannungsrückgangsschutz U< (Spannung < 184 V)",
+      "40": "Frequenzsteigerungsschutz f> (Frequenz > 51,5 Hz)",
+      "41": "Frequenzrückgangsschutz f< (Frequenz < 47,5 Hz)"
+    }
   }
 }

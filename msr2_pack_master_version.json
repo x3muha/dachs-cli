@@ -3323,7 +3323,8 @@
           "label_de": "Dachslauf Tag im Viertelstundentakt"
         }
       ],
-      "variants": []
+      "variants": [],
+      "block_name_de": "Laufzeiten"
     },
     "30": {
       "versions": [
@@ -3477,7 +3478,8 @@
           "label_de": "Datum Uhrzeit der Abschaltung"
         }
       ],
-      "variants": []
+      "variants": [],
+      "block_name_de": "Laufzeiten"
     },
     "31": {
       "versions": [
@@ -3515,7 +3517,8 @@
           "size": 46
         }
       ],
-      "variants": []
+      "variants": [],
+      "block_name_de": "Laufzeiten"
     },
     "32": {
       "versions": [
@@ -3642,7 +3645,8 @@
             }
           ]
         }
-      ]
+      ],
+      "block_name_de": "Laufzeit/Energie"
     },
     "34": {
       "versions": [
@@ -3667,8 +3671,8 @@
           "offset": 0,
           "size": 20,
           "label_de": "Laufzeit seit Start",
-          "unit": "h",
-          "display_format": "{0,number,integer} h"
+          "unit": "min",
+          "display_format": "{0,number,integer} min"
         },
         {
           "kind": "data",
@@ -3717,7 +3721,8 @@
           "label_de": "Wartung in Tagen"
         }
       ],
-      "variants": []
+      "variants": [],
+      "block_name_de": "Laufzeiten"
     },
     "36": {
       "versions": [
