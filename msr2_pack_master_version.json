@@ -3886,7 +3886,8 @@
           "display_format": "{0,number,integer} h"
         }
       ],
-      "variants": []
+      "variants": [],
+      "block_name_de": "Mehrmodul"
     },
     "38": {
       "versions": [
@@ -6197,7 +6198,8 @@
             }
           ]
         }
-      ]
+      ],
+      "block_name_de": "Einstellungen"
     },
     "52": {
       "versions": [
@@ -7059,7 +7061,8 @@
           "size": 30
         }
       ],
-      "variants": []
+      "variants": [],
+      "block_name_de": "Heizkreise"
     },
     "62": {
       "versions": [
