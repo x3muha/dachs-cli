@@ -518,8 +518,8 @@ def run_tui(stdscr, state, args):
 
     stdscr.timeout(80)
     changed = set()
-    hide_name = bool(hide_name)
-    hide_object = bool(hide_object)
+    hide_name = bool(getattr(args, 'hide_name', False))
+    hide_object = bool(getattr(args, 'hide_object', False))
 
     while True:
         h, w = stdscr.getmaxyx()
