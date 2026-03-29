@@ -6,7 +6,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-import dachs_core as dc
+from core import dachs_core as dc
 import dachs_cli_v2 as v2
 
 DEFAULT_BACKUP_BLOCKS = [0,18,20,22,24,26,28,30,31,32,34,36,44,46,50,52,54,56,60,62,66,70,76,80,82,84,86,88,90,92,94,100,102,104,110,112,114]
@@ -267,7 +267,7 @@ def main():
     auth_info = None
     if args.auth_level >= 0:
         cmd = [
-            'python3', 'auth_v2.py',
+            'python3', '-m', 'core.auth_v2',
             '--port', args.port,
             '--baud', str(args.baud),
             '--rx-timeout', str(args.rx_timeout),

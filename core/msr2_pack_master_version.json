@@ -11880,7 +11880,8 @@
             }
           ]
         }
-      ]
+      ],
+      "block_name_de": "Name/Adresse"
     },
     "112": {
       "versions": [
@@ -12016,7 +12017,8 @@
             }
           ]
         }
-      ]
+      ],
+      "block_name_de": "Adresse/E-Mail"
     },
     "114": {
       "versions": [
@@ -12152,7 +12154,8 @@
             }
           ]
         }
-      ]
+      ],
+      "block_name_de": "Service Telefon"
     },
     "500": {
       "versions": [

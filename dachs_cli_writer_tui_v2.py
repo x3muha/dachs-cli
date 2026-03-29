@@ -8,8 +8,7 @@ import sys
 import time
 import threading
 
-sys.path.insert(0, '/root/senertec/dachs-cli')
-import dachs_core as dc
+from core import dachs_core as dc
 import dachs_cli_v2 as v2
 
 
@@ -55,7 +54,7 @@ def load_pack(p, blocks=None, pack_rev='50'):
         return obj.get('layouts', {}), obj.get('formats', {})
     if isinstance(obj.get('blocks'), dict):
         blocks = sorted(set(blocks or []))
-        tmp_pack, _tmp_labels = v2._materialize_pack_for_blocks(Path(p), blocks, str(pack_rev), fallback_formats=Path('/root/senertec/dachs-cli/msr2_formats_v2.json'))
+        tmp_pack, _tmp_labels = v2._materialize_pack_for_blocks(Path(p), blocks, str(pack_rev), fallback_formats=(Path('msr2_formats_v2.json') if Path('msr2_formats_v2.json').exists() else Path('core/msr2_formats_v2.json')))
         x = json.loads(Path(tmp_pack).read_text())
         return x.get('layouts', {}), x.get('formats', {})
     return {}, obj.get('formats', {})
@@ -85,7 +84,7 @@ def expected_len_from_layout(layout):
 
 
 def load_local_label_overrides():
-    p = Path('/root/senertec/dachs-cli/labels_master.properties')
+    p = (Path('labels_master.properties') if Path('labels_master.properties').exists() else Path('core/labels_master.properties'))
     if p.exists():
         try:
             return dc._load_labels(p)
@@ -188,14 +187,34 @@ def msr_pw4(serial_no, bstd):
     return f"{(n + 2749 + ((int(bstd) % 10000)//2)) & 0xFFFF:04d}"
 
 
+
+
+def _resolve_pack_file(pack_file_arg: str | None) -> Path:
+    if pack_file_arg:
+        p = Path(pack_file_arg)
+        if p.exists():
+            return p
+    cands = [
+        Path('core/msr2_pack_master_version.json'),
+        Path('msr2_pack_master_version.json'),
+        Path('core/msr2_pack_master.json'),
+        Path('msr2_pack_master.json'),
+    ]
+    for c in cands:
+        if c.exists():
+            return c
+    return cands[0]
+
 def auth_and_load(args):
-    known_blocks = known_blocks_from_pack(args.pack_file)
-    block_names = block_names_from_pack(args.pack_file)
+    pack_file = _resolve_pack_file(getattr(args, "pack_file", ""))
+    args.pack_file = str(pack_file)
+    known_blocks = known_blocks_from_pack(pack_file)
+    block_names = block_names_from_pack(pack_file)
     if args.all_blocks and known_blocks:
         wanted = sorted(set([20,22] + known_blocks))
     else:
         wanted = [20,22,args.block]
-    layouts, formats = load_pack(args.pack_file, blocks=wanted, pack_rev=getattr(args, 'pack_rev', '50'))
+    layouts, formats = load_pack(pack_file, blocks=wanted, pack_rev=getattr(args, 'pack_rev', '50'))
     layout = layouts.get(str(args.block), [])
     if not layout: raise SystemExit('no layout for block')
     fmap = field_map(layout)
@@ -278,6 +297,14 @@ def _read_key(stdscr):
 
 
 
+
+
+def _safe_text(v) -> str:
+    t = '' if v is None else str(v)
+    # curses.addnstr rejects embedded NUL
+    t = t.replace('\x00', ' ')
+    return t
+
 def _ui_name_obj_val_raw(full_key: str, decoded_raw, fallback_raw, formats: dict, labels: dict):
     base = full_key.split('[', 1)[0]
     label = dc._label_for_key(base, labels or {})
@@ -286,7 +313,7 @@ def _ui_name_obj_val_raw(full_key: str, decoded_raw, fallback_raw, formats: dict
     vtxt, unit = dc._apply_format(base, raw, formats or {})
     if unit:
         vtxt = f"{vtxt} {unit}".rstrip()
-    return str(label), str(obj), str(vtxt), '' if raw is None else str(raw)
+    return _safe_text(label), _safe_text(obj), _safe_text(vtxt), '' if raw is None else _safe_text(raw)
 
 VERSION_BASES = {
     'Hka_Bd_Stat.bSoftwareVersionUeberw',
@@ -381,8 +408,8 @@ def _draw_hex_diff(stdscr, y, x, w, cur_b: bytes, base_b: bytes, attr_norm, attr
 
 
 def _draw_diff_text(stdscr, y, x, w, cur: str, base: str, attr_norm, attr_diff):
-    cur = str(cur)
-    base = str(base)
+    cur = _safe_text(cur)
+    base = _safe_text(base)
     maxw = max(1, w)
     # clear cell first
     stdscr.addnstr(y, x, ' ' * maxw, maxw, attr_norm)
@@ -932,15 +959,15 @@ def run_tui(stdscr, state, args):
                 stdscr.attron(curses.A_REVERSE)
 
             if name_w > 0:
-                stdscr.addnstr(row_y, x0+1, name, max(1, name_w-1), attr)
+                stdscr.addnstr(row_y, x0+1, _safe_text(name), max(1, name_w-1), attr)
             if obj_w > 0:
-                stdscr.addnstr(row_y, x1+1, obj, max(1, obj_w-1), attr)
+                stdscr.addnstr(row_y, x1+1, _safe_text(obj), max(1, obj_w-1), attr)
             if curses.has_colors() and row_changed:
                 _draw_diff_text(stdscr, row_y, x2+1, max(1, val_w-1), vtxt, base_vtxt, attr, curses.color_pair(4) | curses.A_BOLD)
-                stdscr.addnstr(row_y, x3+1, rawtxt, max(1, raw_w-1), attr)
+                stdscr.addnstr(row_y, x3+1, _safe_text(rawtxt), max(1, raw_w-1), attr)
             else:
-                stdscr.addnstr(row_y, x2+1, vtxt, max(1, val_w-1), val_attr)
-                stdscr.addnstr(row_y, x3+1, rawtxt, max(1, raw_w-1), val_attr)
+                stdscr.addnstr(row_y, x2+1, _safe_text(vtxt), max(1, val_w-1), val_attr)
+                stdscr.addnstr(row_y, x3+1, _safe_text(rawtxt), max(1, raw_w-1), val_attr)
 
             if (not curses.has_colors()) and i == idx:
                 stdscr.attroff(curses.A_REVERSE)
@@ -1282,7 +1309,7 @@ def main():
     ap.add_argument('--auth-pass4', default=None)
     ap.add_argument('--rx-timeout', type=float, default=2.0)
     ap.add_argument('--wait-between-blocks', type=float, default=0.0)
-    ap.add_argument('--pack-file', default='/root/senertec/dachs-cli/msr2_pack_master_version.json')
+    ap.add_argument('--pack-file', default='', help='optional pack file override (otherwise auto-detect)')
     ap.add_argument('--pack-rev', default='50')
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--show-reserved', action='store_true')

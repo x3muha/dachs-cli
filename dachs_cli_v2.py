@@ -3,7 +3,7 @@ import argparse
 import json
 import tempfile
 from pathlib import Path
-import dachs_core as core
+from core import dachs_core as core
 
 # kept name for minimal code diff
 v1 = core
@@ -143,8 +143,10 @@ def main():
             cands = [
                 cwd / "msr2_pack_master_version.json",
                 script_dir / "msr2_pack_master_version.json",
+                script_dir / "core/msr2_pack_master_version.json",
                 cwd / "msr2_pack_master.json",
                 script_dir / "msr2_pack_master.json",
+                script_dir / "core/msr2_pack_master.json",
             ]
             pack = next((c for c in cands if c.exists()), cands[0])
 
@@ -154,7 +156,7 @@ def main():
         if pack.exists() and json.loads(pack.read_text()).get("blocks"):
             tmp_pack, tmp_labels = _materialize_pack_for_blocks(
                 pack, blocks, args.pack_rev,
-                fallback_formats=(cwd / "msr2_formats_v2.json" if (cwd / "msr2_formats_v2.json").exists() else script_dir / "msr2_formats_v2.json")
+                fallback_formats=(cwd / "msr2_formats_v2.json" if (cwd / "msr2_formats_v2.json").exists() else (script_dir / "msr2_formats_v2.json" if (script_dir / "msr2_formats_v2.json").exists() else script_dir / "core/msr2_formats_v2.json"))
             )
             if labels_file is None:
                 labels_file = tmp_labels

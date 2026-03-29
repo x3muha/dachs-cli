@@ -20,6 +20,20 @@ def to_hex(bs: bytes) -> str:
     return ' '.join(f'{b:02X}' for b in bs)
 
 
+def _ansi_enabled() -> bool:
+    try:
+        import sys
+        return bool(getattr(sys.stdout, 'isatty', lambda: False)())
+    except Exception:
+        return False
+
+
+def _ansi_wrap(txt: str, code: str) -> str:
+    if not _ansi_enabled():
+        return txt
+    return f'\x1b[{code}m{txt}\x1b[0m'
+
+
 def crc16_msr(data: bytes) -> int:
     poly = 0x1021
     table = []
@@ -225,6 +239,57 @@ def readall(port: str, baud: int, blocks: list[int], interval: float, loops: int
                 time.sleep(max(0.02, interval))
     return 0
 
+
+
+
+def read_blocks_batch(port: str, baud: int, blocks: list[int], rx_timeout: float,
+                      wait_between_blocks: float = 0.0, flush_before_read: bool = True,
+                      retry_on_timeout: int = 0):
+    """Read multiple blocks in one serial session (backup-style flow).
+    Returns dict[int, bytes] for successfully read payloads.
+    """
+    out = {}
+    ser = open_port(port, baud)
+    if not ser:
+        return out
+
+    pn = 0
+    with ser:
+        send_service(ser, b'', pn, rx_timeout)
+        pn = (pn + 1) & 0x0F
+
+        for b in blocks:
+            attempt = 0
+            payload = None
+            while attempt <= max(0, int(retry_on_timeout)):
+                if flush_before_read:
+                    try:
+                        ser.reset_input_buffer()
+                    except Exception:
+                        pass
+
+                _tx, _ack, rx, _dt = send_service(ser, bytes([int(b) & 0xFF]), pn, rx_timeout)
+                pn = (pn + 1) & 0x0F
+
+                if rx and len(rx) >= 8 and rx[0] == 0x02:
+                    data = rx[5:-2]
+                    if data and len(data) > 1:
+                        payload = bytes(data[1:])
+                        break
+
+                attempt += 1
+                if attempt <= max(0, int(retry_on_timeout)):
+                    pn = 0
+                    send_service(ser, b'', pn, rx_timeout)
+                    pn = (pn + 1) & 0x0F
+
+            if payload is not None:
+                out[int(b)] = payload
+
+            if wait_between_blocks and wait_between_blocks > 0:
+                time.sleep(float(wait_between_blocks))
+
+    return out
 
 def _resolve_entities(text: str, struct_dir: Path, depth: int = 0) -> str:
     if depth > 8:
@@ -446,6 +511,7 @@ def _bundled_file_candidates(name: str):
     cands = [
         Path.cwd() / name,
         script_dir / name,
+        script_dir.parent / name,
     ]
     out = []
     seen = set()
@@ -469,30 +535,6 @@ def _cleanup_label_for_display(key: str, label: str) -> str:
     elif re.match(r'^Hka_BZbeiSC_Mw2_\d+L\.', kb):
         if not l.startswith('MW2 '):
             l = 'MW2 ' + l
-
-    # explicit rename: Kapseltemperatur without condenser suffix
-    if kb.endswith('.Temp.sKapsel'):
-        if re.match(r'^Hka_BZbeiSC_Mw1_\d+L\.', kb):
-            return 'MW1 Kapseltemperatur' + _phase_suffix(key)
-        if re.match(r'^Hka_BZbeiSC_Mw2_\d+L\.', kb):
-            return 'MW2 Kapseltemperatur' + _phase_suffix(key)
-        return 'Kapseltemperatur' + _phase_suffix(key)
-    if kb.endswith('.MaxTemp.sKapsel'):
-        return 'Maximale Kapseltemperatur' + _phase_suffix(key)
-
-    # targeted cleanup for technical/cryptic labels
-    suffix_overrides = {
-        '.Hka_UC.ubFehlerGrundMc1': 'Fehlergrund MC1',
-        '.Hka_UC.ubFehlerCodeMc1': 'Fehlercode MC1',
-        '.Hka_UC.ubFehlerGrundMc2': 'Fehlergrund MC2',
-        '.Hka_UC.ubFehlerCodeMc2': 'Fehlercode MC2',
-        '.Hka_UC.ubSchutzartMc1': 'Schutzart MC1',
-        '.Hka_UC.ubSchutzartMc2': 'Schutzart MC2',
-        '.Hka_UC.ausPhi': 'Phi',
-    }
-    for suf, txt in suffix_overrides.items():
-        if kb.endswith(suf):
-            return txt + _phase_suffix(key)
 
     # generic polish
     l = re.sub(r'^(ub|aus|sb|us|ul|uch|s|b|a)\s+', '', l)
@@ -551,6 +593,21 @@ def _label_for_key(key: str, labels: dict) -> str:
     n_key = re.sub(r'^Hka_BZbeiSC_Mw2_\d+L\.', 'Hka_Mw2.', n_key)
     if n != kb or n_key != key:
         cands += [n_key, n_key + '.presenter', n_key + '.Short', n, n + '.presenter', n + '.Short']
+
+    # suffix-label overrides from labels file (e.g. '*.Hka_UC.ubFehlerCodeMc1=Fehlercode MC1')
+    # apply BEFORE exact key labels so local overrides can replace source labels cleanly
+    for lk, lv in (labels or {}).items():
+        if not isinstance(lk, str) or not isinstance(lv, str):
+            continue
+        if not lv.strip():
+            continue
+        suf = None
+        if lk.startswith('*.'):
+            suf = lk[1:]   # keep leading dot
+        elif lk.startswith('.'):
+            suf = lk
+        if suf and kb.endswith(suf):
+            return _cleanup_label_for_display(key, _strip_html_label(lv) + _phase_suffix(key))
 
     for c in cands:
         if c in labels and str(labels[c]).strip():
@@ -1098,6 +1155,30 @@ def _apply_format(key: str, val, fmap):
             return f"{iv} ({t})", ''
         except Exception:
             pass
+
+    # minute fields: show human-friendly h/m from raw minutes
+    if kb_live.endswith('_min'):
+        try:
+            mins = int(round(v))
+            if mins >= 60:
+                h = mins // 60
+                m = mins % 60
+                return f"{h}h {m}m", ''
+            return f"{mins} min", ''
+        except Exception:
+            pass
+
+    # generic value mapping from pack/formats (data-driven)
+    vm = f.get('value_map') or f.get('enum') or f.get('choices') or {}
+    if isinstance(vm, dict) and vm:
+        try:
+            iv = int(round(v))
+            txt = vm.get(str(iv), vm.get(iv))
+            if txt is not None and str(txt) != '':
+                return f"{iv} ({txt})", ''
+            return f"{iv} (unknown-index)", ''
+        except Exception:
+            pass
     if 'integer' in fmt:
         v = int(round(v))
     elif '#.##' in fmt:
@@ -1225,6 +1306,45 @@ def _resolve_optional_file(preferred: Path | None, candidates: list[Path]) -> Pa
 
 
 
+
+
+def _layout_expected_len(layout):
+    m = 0
+    for f in (layout or []):
+        if not isinstance(f, dict):
+            continue
+        if f.get('kind') != 'data':
+            continue
+        off = int(f.get('offset', 0) or 0)
+        t = (f.get('type') or 'Byte').lower()
+        rep = int(f.get('repeat', 1) or 1)
+        ln = int(f.get('length', 0) or 0)
+        if t == 'byte': sz = 1
+        elif t == 'short': sz = 2
+        elif t == 'long': sz = 4
+        elif t == 'string': sz = max(1, ln)
+        else: sz = 1
+        if t == 'string':
+            n = 1
+        else:
+            n = rep if rep > 1 else (ln if ln > 1 else 1)
+        end = off + (sz * n)
+        if end > m:
+            m = end
+    return m
+
+
+def _payload_len_tag(actual: int, expected: int | None):
+    base = f"payload={actual}B"
+    if expected is None or expected <= 0:
+        return base
+    txt = f"{base} expected={expected}B"
+    if actual <= 0:
+        return _ansi_wrap(txt, '31')
+    if actual == expected:
+        return _ansi_wrap(txt, '32')
+    return _ansi_wrap(txt, '33')
+
 def _render_field_name(label: str, key: str, mode: str = 'both') -> str:
     m = (mode or 'both').lower()
     if m == 'text':
@@ -1235,14 +1355,17 @@ def _render_field_name(label: str, key: str, mode: str = 'both') -> str:
 
 def readall_decoded(port: str, baud: int, blocks: list[int], interval: float, loops: int, rx_timeout: float,
                     data_xml: Path, struct_dir: Path, format_dir: Path, pack_file: Path | None = None,
-                    labels_file: Path | None = None, show_reserved: bool = False, display_mode: str = "both"):
+                    labels_file: Path | None = None, show_reserved: bool = False, display_mode: str = "both",
+                    show_msr_menu_code: bool = False):
     ser = open_port(port, baud)
     if not ser:
         return 2
     fmap = {}
     layouts = {}
+    msr_menu_codes = {}
 
     script_dir = Path(__file__).resolve().parent
+    project_dir = script_dir.parent
     cwd = Path.cwd()
 
     pack_file = _resolve_optional_file(
@@ -1250,10 +1373,13 @@ def readall_decoded(port: str, baud: int, blocks: list[int], interval: float, lo
         [
             cwd / 'msr2_pack_master.json',
             script_dir / 'msr2_pack_master.json',
+            project_dir / 'msr2_pack_master.json',
             cwd / 'msr2_pack_dachs.json',
             script_dir / 'msr2_pack_dachs.json',
+            project_dir / 'msr2_pack_dachs.json',
             cwd / 'msr2_pack_subset.json',
             script_dir / 'msr2_pack_subset.json',
+            project_dir / 'msr2_pack_subset.json',
         ],
     )
     labels_file = _resolve_optional_file(
@@ -1261,14 +1387,21 @@ def readall_decoded(port: str, baud: int, blocks: list[int], interval: float, lo
         [
             cwd / 'labels_merged.properties',
             script_dir / 'labels_merged.properties',
+            project_dir / 'labels_merged.properties',
             cwd / 'labels_master.properties',
             script_dir / 'labels_master.properties',
+            project_dir / 'labels_master.properties',
             cwd / 'labels_subset.properties',
             script_dir / 'labels_subset.properties',
+            project_dir / 'labels_subset.properties',
         ],
     )
 
     labels = _load_labels(labels_file) if labels_file else {}
+    # local custom overrides should always win (suffix rules, manual renames)
+    local_labels = _resolve_optional_file(None, [cwd / 'labels_master.properties', script_dir / 'labels_master.properties', project_dir / 'labels_master.properties'])
+    if local_labels:
+        labels.update(_load_labels(local_labels))
     if pack_file and pack_file.exists():
         p = json.loads(pack_file.read_text())
         fmap = p.get('formats', {})
@@ -1277,6 +1410,11 @@ def readall_decoded(port: str, baud: int, blocks: list[int], interval: float, lo
     else:
         fmap = _load_format_map(format_dir)
         layouts = {b: _load_block_layout(data_xml, struct_dir, b) for b in blocks}
+
+    for _b, _lay in layouts.items():
+        for _e in (_lay or []):
+            if isinstance(_e, dict) and _e.get('key') and (_e.get('msr_menu_code') or _e.get('handbook_code')):
+                msr_menu_codes[_e.get('key')] = str((_e.get('msr_menu_code') or _e.get('handbook_code')))
     pn = 0
     with ser:
         try:
@@ -1300,7 +1438,9 @@ def readall_decoded(port: str, baud: int, blocks: list[int], interval: float, lo
                 data = rx[5:-2]
                 status = data[0] if data else 0
                 payload = data[1:] if len(data) > 1 else b''
-                print(f"\n[block {b}] status=0x{status:02X} payload={len(payload)}B rtt={dt:.1f}ms")
+                exp_len = _layout_expected_len(layouts.get(b, []))
+                plen = _payload_len_tag(len(payload), exp_len)
+                print(f"\n[block {b}] status=0x{status:02X} {plen} rtt={dt:.1f}ms")
                 decoded = _decode_fields(payload, layouts.get(b, []))
                 merged_versions, consumed = _collapse_version_fields(decoded)
 
@@ -1332,13 +1472,17 @@ def readall_decoded(port: str, baud: int, blocks: list[int], interval: float, lo
                     consumed.update(k for k in decoded.keys() if k.startswith('Hka_BzbeiWarnHist_'))
                     consumed.update(k for k in ['AktuelleRingnummer_SCHist','AktuelleRingnummer_BLS','AktuelleRingnummer_WHist'] if k in decoded)
 
+                printed_any = False
+
                 # print merged version fields first
                 for k, vv in merged_versions.items():
                     label = _label_for_key(k, labels)
                     if (not show_reserved) and _is_reserved_key(k):
                         continue
                     name = _render_field_name(label, k, display_mode)
-                    print(f"  {name} = {vv}")
+                    hb = f" [{msr_menu_codes.get(k)}]" if (show_msr_menu_code and msr_menu_codes.get(k)) else ""
+                    print(f"  {name} = {vv}{hb}")
+                    printed_any = True
 
                 for k, v in decoded.items():
                     if k in consumed:
@@ -1348,7 +1492,13 @@ def readall_decoded(port: str, baud: int, blocks: list[int], interval: float, lo
                     if (not show_reserved) and _is_reserved_key(k):
                         continue
                     name = _render_field_name(label, k, display_mode)
-                    print(f"  {name} = {vv} {unit}".rstrip())
+                    hb = f" [{msr_menu_codes.get(k)}]" if (show_msr_menu_code and msr_menu_codes.get(k)) else ""
+                    print(f"  {name} = {vv} {unit}".rstrip() + hb)
+                    printed_any = True
+
+                if not printed_any:
+                    print(f"  PAYLOAD_HEX: {to_hex(payload)}")
+
                 time.sleep(max(0.02, interval))
     return 0
 
@@ -1437,6 +1587,7 @@ def main():
     p_rd.add_argument('--show-reserved', action='store_true', help='Show reserve/res fields (hidden by default)')
     p_rd.add_argument('--text-only', action='store_true', help='Show only text labels (no [key])')
     p_rd.add_argument('--key-only', action='store_true', help='Show only [key] (no text label)')
+    p_rd.add_argument('--show-msr-menu-code', action='store_true', help='Append MSR menu code like [1/8/10] at end')
 
     p_keys = sub.add_parser('list-keys', help='List extracted XML keys')
     p_keys.add_argument('--mapping', default=str(Path(__file__).resolve().parent / 'msr2_master_map.json'))
@@ -1473,6 +1624,7 @@ def main():
             Path(args.labels_file) if args.labels_file else None,
             args.show_reserved,
             mode,
+            args.show_msr_menu_code,
         )
     if args.cmd == 'list-keys':
         return list_keys(Path(args.mapping), args.limit) or 0
