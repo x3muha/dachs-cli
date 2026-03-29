@@ -1,0 +1,38 @@
+{
+  "schema": "dachs-knx-daemon-config/v2",
+  "files": {
+    "points_file": "knx/config/knx_points_v2.json",
+    "cache_file": "cache/dachs_cache_v2.json"
+  },
+  "runtime": {
+    "interval_s": 60.0,
+    "log_level": "info",
+    "initial_send": true
+  },
+  "cache_reader": {
+    "enabled": true,
+    "command": [
+      "python3",
+      "dachs_cache_reader_v2.py"
+    ],
+    "restart_on_exit": true,
+    "restart_delay_s": 2.0,
+    "interval_s": 60.0,
+    "mode": "every"
+  },
+  "transport": {
+    "routing": {
+      "enabled": true,
+      "multicast_group": "224.0.23.12",
+      "multicast_port": 3671,
+      "local_ip": "0.0.0.0"
+    },
+    "tunneling": {
+      "enabled": false,
+      "gateway_ip": "192.168.1.1",
+      "gateway_port": 3671,
+      "local_ip": "0.0.0.0"
+    },
+    "individual_address": "0.0.250"
+  }
+}

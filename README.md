@@ -1,290 +1,202 @@
 # dachs-cli v2
 
-CLI-/TUI-Toolset für MSR2-Regler (lesen, dekodieren, sichern, schreiben).
-Alle v2-Tools nutzen das versionierte Pack (`msr2_pack_master_version.json`) und `dachs_core.py` als gemeinsame Basis.
+Sauberes v2-Toolset für MSR2 auf Raspberry Pi:
+- **CLI v2** (lesen/decodieren)
+- **TUI v2** (anzeigen + schreiben)
+- **Backup v2** (vollständige Sicherung)
 
-## Anwendungen
-
-- `dachs_cli_v2.py`  
-  Lesen/Decodieren von Blöcken (`read-block`, `readall`, `readall-decoded`, `watch-link`).
-- `msr_backup_v2.py`  
-  Backup mit 2 Lese-Pässen, Auth, Diff zwischen Pass1/Pass2.
-- `dachs_cli_writer_tui_v2.py`  
-  Interaktive TUI zum Anzeigen/Ändern/Speichern mit Auth und Blockwechsel.
-- `auth_v2.py`  
-  Nur Authentifizierung (PW4, angeforderter/granteter Level).
+Projektstruktur (aktuell):
+- `dachs_cli_v2.py` → CLI v2
+- `dachs_cli_writer_tui_v2.py` → TUI v2
+- `dachs_backup_v2.py` / `msr_backup_v2.py` → Backup v2
+- `core/` → Core + Auth + Pack/Format/Labels
+- `knx/` → KNX-Tools (v2)
 
 ---
 
-## `dachs_cli_v2.py`
+## 1) Installation (Raspberry Pi OS, aktuell)
 
-### Global
-- `--port`  
-  Serial-Port (Standard: `/dev/ttyUSB0`).
-- `--baud`  
-  Baudrate (Standard: `19200`).
+### 1) Systempakete
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip python3-serial git
+```
 
-### `watch-link`
-- `--count`  
-  Anzahl Keepalive-/Watch-Zyklen.
-- `--interval`  
-  Pause zwischen Zyklen in Sekunden.
-- `--rx-timeout`  
-  Timeout für Antworten vom Regler.
+Optional (nur wenn nötig):
+```bash
+sudo usermod -aG dialout $USER
+# danach neu einloggen
+```
 
-### `read-block`
-- `--block`  
-  Zu lesender Block (Pflicht).
-- `--packet`  
-  Start-Paketnummer (PN) für den Request.
-- `--rx-timeout`  
-  Timeout für den Block-Read.
+### 2) Repo holen
+```bash
+git clone git@github.com:x3muha/dachs-cli.git
+cd dachs-cli
+```
 
-### `readall`
-- `--blocks`  
-  CSV-Liste der Blöcke (`20,22,24,...`).
-- `--interval`  
-  Standardwartezeit zwischen Block-Reads.
-- `--loops`  
-  Wie oft die Blockliste komplett gelesen wird.
-- `--rx-timeout`  
-  Timeout je Block.
-- `--wait-between-blocks`  
-  Explizite Wartezeit zwischen Blöcken; überschreibt `--interval`.
+### 3) Python-venv für optionale Tools (z. B. KNX/xknx)
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install xknx
+```
 
-### `readall-decoded`
-- `--blocks`  
-  CSV-Liste der zu dekodierenden Blöcke.
-- `--interval`  
-  Standardwartezeit zwischen Blöcken.
-- `--loops`  
-  Anzahl kompletter Lese-Durchläufe.
-- `--rx-timeout`  
-  Timeout je Block.
-- `--wait-between-blocks`  
-  Explizite Wartezeit pro Block; überschreibt `--interval`.
-- `--data-xml`  
-  Pfad zur Data-XML (Legacy/XML-Pfad).
-- `--struct-dir`  
-  XML-Strukturverzeichnis für Legacy-Decodepfade.
-- `--format-dir`  
-  Format-/Properties-Verzeichnis für Legacy-Decodepfade.
-- `--pack-file`  
-  Pack-Datei mit Layout/Format (Standard: versioniertes Pack).
-- `--pack-rev`  
-  Zielrevision im versionierten Pack (Standard: `50`).
-- `--labels-file`  
-  Zusätzliche Label-Datei (`*.properties`) für Anzeigenamen.
-- `--show-reserved`  
-  Reservierte/uninteressante Felder mit anzeigen.
-- `--text-only`  
-  Nur Klartextlabel anzeigen (ohne `[key]`).
-- `--key-only`  
-  Nur technische Keys anzeigen (ohne Label).
-- `--show-msr-menu-code`  
-  Handbuch-/Menücode (`msr_menu_code`) neben Feldwert anzeigen.
-
-### `list-keys`
-- `--mapping`  
-  Mapping-Datei als Quelle für Key-Liste.
-- `--limit`  
-  Maximalzahl auszugebender Keys.
+### 4) Schnelltest
+```bash
+python3 dachs_cli_v2.py --help
+python3 dachs_cli_writer_tui_v2.py --help
+python3 dachs_backup_v2.py --help
+```
 
 ---
 
-## `msr_backup_v2.py`
+## 2) CLI v2 (`dachs_cli_v2.py`)
 
-- `--port`  
-  Serial-Port.
-- `--baud`  
-  Baudrate.
-- `--rx-timeout`  
-  Timeout pro Blockread.
-- `--pause-between-passes`  
-  Wartezeit zwischen Pass1 und Pass2.
-- `--pause-between-blocks`  
-  Wartezeit zwischen Blöcken.
-- `--wait-between-blocks`  
-  Alias für `--pause-between-blocks`.
-- `--blocks`  
-  CSV-Override der Blockliste; ohne Angabe: alle bekannten Blöcke aus Pack.
-- `--pack-file`  
-  Verwendete Pack-Datei.
-- `--pack-rev`  
-  Zielrevision für pack-basiertes Materialisieren.
-- `--output`  
-  Ausgabedatei für Backup-JSON.
-- `--no-decode`  
-  Nur Rohdaten sichern, ohne Decode-Abschnitte.
-- `--auth-level`  
-  Gewünschter Auth-Level (Default `5`, `<0` = Auth überspringen).
-- `--auth-pass4`  
-  PW4 explizit vorgeben statt berechnen.
-- `--no-flush-before-read`  
-  Kein Input-Buffer-Flush vor Read.
-- `--retry-on-timeout`  
-  Retries pro Block bei Timeout/leerem Read.
+Kurzbeschreibung:
+- Liest MSR2-Blöcke roh oder dekodiert.
+- Nutzt Pack/Format aus `core/` (v2-Standard).
+
+### Schalter
+
+**Global**
+- `--port` Serial-Port (Default: `/dev/ttyUSB0`)
+- `--baud` Baudrate (Default: `19200`)
+
+**Commands**
+- `watch-link`
+  - `--count` Anzahl Zyklen
+  - `--interval` Pause zwischen Zyklen
+  - `--rx-timeout` Timeout
+
+- `read-block`
+  - `--block` Block-ID (Pflicht)
+  - `--packet` Start-PN
+  - `--rx-timeout` Timeout
+
+- `readall`
+  - `--blocks` CSV-Liste Blöcke
+  - `--loops` Anzahl Durchläufe
+  - `--interval` Standardpause
+  - `--wait-between-blocks` explizite Blockpause
+  - `--rx-timeout` Timeout
+
+- `readall-decoded`
+  - `--blocks` CSV-Liste Blöcke
+  - `--loops` Anzahl Durchläufe
+  - `--interval` / `--wait-between-blocks`
+  - `--rx-timeout`
+  - `--pack-file` optionales Pack-Override
+  - `--pack-rev` Pack-Revision (Default `50`)
+  - `--labels-file` optionales Label-Override
+  - `--show-reserved` reservierte Felder anzeigen
+  - `--text-only` nur Labels
+  - `--key-only` nur Keys
+  - `--show-msr-menu-code` Handbuchcode anzeigen
+
+### Beispiele
+```bash
+# Einzelblock roh lesen
+python3 dachs_cli_v2.py --port /dev/ttyUSB0 --baud 19200 read-block --block 20 --rx-timeout 0.9
+
+# Dekodiert lesen (Hauptblöcke)
+python3 dachs_cli_v2.py --port /dev/ttyUSB0 --baud 19200 readall-decoded --blocks 20,22,24 --loops 1 --pack-rev 50 --rx-timeout 0.9
+```
 
 ---
 
-## `dachs_cli_writer_tui_v2.py`
+## 3) TUI v2 (`dachs_cli_writer_tui_v2.py`)
 
-- `--port`  
-  Serial-Port.
-- `--baud`  
-  Baudrate.
-- `--block`  
-  Startblock beim Öffnen der TUI.
-- `--all-blocks`  
-  Preload/Cache für bekannte Blöcke aktivieren (schneller Blockwechsel).
-- `--auth-level`  
-  Gewünschter Auth-Level für Schreiben.
-- `--auth-pass4`  
-  PW4 manuell vorgeben.
-- `--rx-timeout`  
-  Timeout je Read/Write-Operation.
-- `--wait-between-blocks`  
-  Wartezeit zwischen Block-Reads im Batch/Preload.
-- `--pack-file`  
-  Pack-Datei für Layout/Formats.
-- `--pack-rev`  
-  Zielrevision im versionierten Pack.
-- `--dry-run`  
-  Änderungen lokal testen, ohne echten Write.
-- `--show-reserved`  
-  Reservierte Felder anzeigen.
-- `--hide-name`  
-  Name-Spalte ausblenden (mehr Platz für Wert/Raw).
-- `--hide-object` / `--hide-objekt`  
-  Objekt-Spalte ausblenden (mehr Platz für Wert/Raw).
-- `--no-hex`  
-  HEX-Bereich unten ausblenden.
+Kurzbeschreibung:
+- Interaktive Ansicht/Editor für Blöcke.
+- Blockwechsel, Raw-Mode, Save/Reload, Auth-Flow.
 
-### TUI-Shortcuts
-- `↑/↓`, `PgUp/PgDn`: Feldnavigation
-- `←/→`: Block vor/zurück
-- `Enter`: Inline-Edit
-- `b`: Blockliste öffnen (`↑/↓`, `Enter`, `Esc`)
-- `n`: Name-Spalte live ein/aus
-- `o`: Objekt-Spalte live ein/aus
-- `F2` / `s`: Speichern
-- `F4` / `r`: Reload aktueller Block
-- `F6`: Raw-Mode umschalten
-- `F10` / `Esc` / `q`: Beenden
+### Schalter
+- `--port` Serial-Port
+- `--baud` Baudrate
+- `--block` Startblock (Pflicht)
+- `--all-blocks` bekannte Blöcke laden (schneller Wechsel)
+- `--auth-level` Auth-Level (Default `5`)
+- `--auth-pass4` PW4 manuell
+- `--rx-timeout` Timeout
+- `--wait-between-blocks` Pause zwischen Blockreads
+- `--pack-file` optionales Pack-Override (sonst Auto-Detect)
+- `--pack-rev` Pack-Revision (Default `50`)
+- `--dry-run` Writes simulieren
+- `--show-reserved` reservierte Felder anzeigen
+- `--hide-name` Name-Spalte ausblenden
+- `--hide-object` Objekt-Spalte ausblenden
+- `--no-hex` HEX-Bereich unten ausblenden
+
+### Beispiele
+```bash
+# Standard TUI
+python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --baud 19200 --block 18 --all-blocks --pack-rev 50 --rx-timeout 0.9
+
+# TUI mit mehr Platz für Werte
+python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --baud 19200 --block 18 --all-blocks --hide-name --hide-object --pack-rev 50 --rx-timeout 0.9
+
+# Dry-Run (kein echter Write)
+python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --baud 19200 --block 22 --all-blocks --dry-run --pack-rev 50
+```
+
+### Wichtige Tasten
+- `↑/↓`, `PgUp/PgDn` Feldnavigation
+- `←/→` Blockwechsel
+- `Enter` Edit
+- `F2`/`s` Speichern
+- `F4`/`r` Reload
+- `F6` Raw-Mode
+- `n` Name-Spalte toggle
+- `o` Objekt-Spalte toggle
+- `Esc`/`q`/`F10` Beenden
 
 ---
 
-## `auth_v2.py`
+## 4) Backup v2 (`dachs_backup_v2.py`)
 
-- `--port`  
-  Serial-Port.
-- `--baud`  
-  Baudrate.
-- `--rx-timeout`  
-  Timeout für Auth-Frames.
-- `--auth-level`  
-  Anzufordernder Auth-Level (Pflicht).
-- `--auth-pass4`  
-  PW4 manuell (sonst automatisch berechnet).
-- `--retries`  
-  Wiederholungen bei fehlender/ungültiger Antwort.
-- `--json`  
-  Ausgabe als JSON (maschinenlesbar).
+Kurzbeschreibung:
+- Vollbackup mit Auth, Retry, optional Decode.
+- Geeignet für Vergleich/Archivierung.
+
+### Schalter
+- `--port` Serial-Port
+- `--baud` Baudrate
+- `--rx-timeout` Timeout
+- `--pause-between-passes` Pause zwischen Pass1/Pass2
+- `--pause-between-blocks` Pause zwischen Blöcken
+- `--wait-between-blocks` Alias für `--pause-between-blocks`
+- `--blocks` CSV-Blockliste (sonst alle aus Pack)
+- `--pack-file` Pack-Override
+- `--pack-rev` Revision (Default `50`)
+- `--output` Ausgabedatei
+- `--no-decode` nur Rohdaten
+- `--auth-level` Default `5` (`<0` = ohne Auth)
+- `--auth-pass4` PW4 manuell
+- `--no-flush-before-read` kein Flush vor Read
+- `--retry-on-timeout` Retries je Block
+
+### Beispiele
+```bash
+# Voller Backup-Lauf (empfohlen)
+python3 dachs_backup_v2.py --port /dev/ttyUSB0 --baud 19200 --rx-timeout 0.9 --auth-level 5 --retry-on-timeout 3 --pause-between-blocks 0.05 --pause-between-passes 0.2 --pack-file core/msr2_pack_master_version.json --pack-rev 50 --output msr_backup_$(date +%Y%m%d_%H%M%S)_full.json
+
+# Nur Rohdaten
+python3 dachs_backup_v2.py --port /dev/ttyUSB0 --pack-rev 50 --no-decode --output msr_backup_raw.json
+```
 
 ---
 
-## Kern-/Daten-Dateien
 
-- `dachs_core.py` – gemeinsamer Transport/Decode/Batch-Read-Core
-- `msr2_pack_master_version.json` – versioniertes Layout/Mapping
-- `msr2_formats_v2.json` – Format-/Value-Mapping
-- `labels_master.properties` – lokale Label-/Suffix-Overrides
-- `msr_transport.py`, `msr_read.py`, `msr_decode.py` – modulare Re-Exports auf v2-Core
+## Cache Reader
 
----
-
-## Startbeispiele (Copy & Paste)
-
-### `dachs_cli_v2.py`
-
-- Link beobachten (5 Zyklen):
-```bash
-python3 dachs_cli_v2.py --port /dev/ttyUSB0 watch-link --count 5 --interval 1
-```
-
-- Einzelnen Block roh lesen:
-```bash
-python3 dachs_cli_v2.py --port /dev/ttyUSB0 read-block --block 20
-```
-
-- Mehrere Blöcke lesen (roh):
-```bash
-python3 dachs_cli_v2.py --port /dev/ttyUSB0 readall --blocks 20,22,24 --loops 1 --wait-between-blocks 0
-```
-
-- Dekodiert lesen (Block 18):
-```bash
-python3 dachs_cli_v2.py --port /dev/ttyUSB0 readall-decoded --blocks 18 --pack-rev 50 --loops 1
-```
-
-- Dekodiert lesen mit Menücodes:
-```bash
-python3 dachs_cli_v2.py --port /dev/ttyUSB0 readall-decoded --blocks 20,22 --pack-rev 50 --show-msr-menu-code
-```
-
-### `msr_backup_v2.py`
-
-- Standard-Backup (alle bekannten Pack-Blöcke):
-```bash
-python3 msr_backup_v2.py --port /dev/ttyUSB0 --pack-rev 50
-```
-
-- Backup mit eigener Blockliste:
-```bash
-python3 msr_backup_v2.py --port /dev/ttyUSB0 --blocks 18,20,22,24,26 --pack-rev 50
-```
-
-- Backup ohne Decode (nur Rohdaten):
-```bash
-python3 msr_backup_v2.py --port /dev/ttyUSB0 --no-decode --pack-rev 50
-```
-
-### `dachs_cli_writer_tui_v2.py`
-
-- TUI auf Startblock 20 (nur aktueller Block, kein All-Blocks-Preload):
-```bash
-python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --block 20 --pack-rev 50
-```
-
-- TUI auf Block 20 + Rest im Hintergrund puffern (`--all-blocks`):
-```bash
-python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --block 20 --pack-rev 50 --all-blocks --rx-timeout 0.9 --wait-between-blocks 0
-```
-
-- TUI auf Block 18 (Meldungsliste) mit All-Blocks-Buffer:
-```bash
-python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --block 18 --pack-rev 50 --all-blocks
-```
-
-- TUI Dry-Run (Änderungen testen ohne echten Write):
-```bash
-python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --block 22 --pack-rev 50 --dry-run
-```
-
-### `auth_v2.py`
-
-- Auth-Level 5 als JSON testen:
-```bash
-python3 auth_v2.py --port /dev/ttyUSB0 --auth-level 5 --json
-```
-
-- Auth mit manuellem PW4:
-```bash
-python3 auth_v2.py --port /dev/ttyUSB0 --auth-level 5 --auth-pass4 3478 --json
-```
+- `dachs_cache_reader_v2.py` schreibt `cache/dachs_cache_v2.json` als Quelle für den KNX-Daemon.
 
 
-- TUI mit maximalem Platz für Wert/Raw (Name+Objekt aus):
-```bash
-python3 dachs_cli_writer_tui_v2.py --port /dev/ttyUSB0 --block 18 --pack-rev 50 --all-blocks --hide-name --hide-object
-```
+### KNX Daemon Cache-Reader Modus
+
+In `knx/config/knx_dachs_daemon_config_v2.json`:
+- `cache_reader.mode: "every"` → lesen, warten `interval_s`, wieder lesen
+- `cache_reader.mode: "loop"` → lesen, Ende, sofort wieder lesen
+
+`cache_reader.interval_s` wird für `mode: "every"` verwendet (Default 60s).

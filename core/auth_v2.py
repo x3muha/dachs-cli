@@ -4,7 +4,7 @@ import json
 import time
 from pathlib import Path
 
-import dachs_core as dc
+from core import dachs_core as dc
 
 
 def calc_pw4(serial: str, bstd_hours: int) -> str:
@@ -31,13 +31,13 @@ def _read_block_with_retry(ser, block: int, timeout: float, retries: int = 3):
 
 
 def do_auth(port: str, baud: int, timeout: float, level: int, pass4_override: str | None, retries: int = 3):
-    pack_path = Path('/root/senertec/dachs-cli/msr2_pack_master_version.json')
+    pack_path = (Path('core/msr2_pack_master_version.json') if Path('core/msr2_pack_master_version.json').exists() else Path('msr2_pack_master_version.json'))
     obj = json.loads(pack_path.read_text())
     if isinstance(obj.get('layouts'), dict):
         layouts = obj.get('layouts', {})
     else:
         import dachs_cli_v2 as v2
-        tmp_pack, _tmp_labels = v2._materialize_pack_for_blocks(pack_path, [20,22], '50', fallback_formats=Path('/root/senertec/dachs-cli/msr2_formats_v2.json'))
+        tmp_pack, _tmp_labels = v2._materialize_pack_for_blocks(pack_path, [20,22], '50', fallback_formats=(Path('core/msr2_formats_v2.json') if Path('core/msr2_formats_v2.json').exists() else Path('msr2_formats_v2.json')))
         layouts = json.loads(Path(tmp_pack).read_text()).get('layouts', {})
     ser = dc.open_port(port, baud)
     if not ser:
